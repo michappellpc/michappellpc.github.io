@@ -11,6 +11,7 @@ const fmt = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const boardName = id => (bank.boards.find(b => b.id === id) || {}).name || id;
 const isDraft = q => q.status !== 'reviewed';
+const mascotOn = () => Store.data.settings.mascot !== false;
 const showDrafts = () => Store.data.settings.showDrafts !== false;
 const notesText = q => q.optionNotes ? '\n\nAnswer choices:\n' + q.options.filter(o => q.optionNotes[o.id]).map(o => esc(`${o.id}. ${q.optionNotes[o.id]}`)).join('\n') : '';
 const csvCell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -28,7 +29,7 @@ async function hydrateImages() {
   }
 }
 function labelScrolls() { $app.querySelectorAll('.scroll').forEach(b => { const h = b.closest('.card') && b.closest('.card').querySelector('h2,h3'); b.setAttribute('aria-label', (h ? h.textContent : 'Data') + ' table'); }); }
-function pageTitle(t) { const h = document.getElementById('page-title'); if (h) h.textContent = t; document.title = t + ' | RAMQBank'; }
+function pageTitle(t) { const h = document.getElementById('page-title'); if (h) h.textContent = t; document.title = t + ' | AeroMedQBank'; }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function applyTheme() {
@@ -104,10 +105,15 @@ function feedbackDialog(q) {
 }
 
 // ---------- router ----------
-function route() {
+async function route() {
   clearInterval(tick); $timer.hidden = true; Mascot.stop();
   if (Cloud.enabled && !ready) return;
   const [p, arg, arg2, arg3] = location.hash.replace(/^#\/?/, '').split('/');
+  if (Cloud.enabled && p !== 'admin' && Admin.changed) {      // questions were edited on the Admin pages; load the new set before practising
+    Admin.changed = false;
+    try { setQuestions(await Cloud.questions()); } catch {}
+    if (location.hash.replace(/^#\/?/, '').split('/')[0] !== p) return;   // the person moved on while it loaded
+  }
   document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href').split('/').slice(0, 2).join('/') === '#/' + (p === 'test' ? 'create' : p === 'results' || p === 'review' ? 'history' : p)));
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
@@ -133,14 +139,15 @@ function dashboard() {
   const active = Store.data.active;
   const rk = Mascot.rankFor(c);
   const acc = c + w ? pct(c, c + w) : null, missed = all.filter(s => s.last === 'w').length;
-  const hello = acc === null ? 'Reporting for duty, Doc! Ready for your first set of reps?'
-    : (acc >= 80 ? 'Hooah! You\'re holding a strong average. Keep the pressure on.' : acc >= 60 ? 'Solid progress. Let\'s tighten up the weak spots.' : 'Tough terrain, but every question is a rep that counts.')
+  const hello = acc === null ? 'Welcome, Doc. Ready for your first set of questions?'
+    : (acc >= 80 ? 'Strong average. Keep the pressure on.' : acc >= 60 ? 'Solid progress. Let\'s tighten up the weak spots.' : 'Every question is practice that counts.')
     + (missed ? ` You have ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
+  const headline = acc === null ? 'Start a test to build your performance profile.' : `${pct(c, c + w)}% correct across ${c + w} answers.` + (missed ? ` ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
   $app.innerHTML = `
-  ${Mascot.scene()}
+  ${Mascot.scene(bank.config.coverImage)}
   ${active ? `<div class="card row spread"><div><b>Test in progress</b> <span class="muted">(${Object.keys(active.answers).length}/${active.qids.length} answered)</span></div><a class="btn primary" href="#/test">Resume</a></div>` : ''}
   <div class="card rank">
-    <div class="row" style="gap:14px;flex-wrap:nowrap">${Mascot.insignia(rk.abbr, 5)}
+    <div class="row" style="gap:14px;flex-wrap:nowrap"><span class="rankbadge" aria-hidden="true">${esc(rk.abbr)}</span>
       <div style="flex:1;min-width:0"><div class="rank-title">${rk.name}</div>
         <div class="muted">${rk.next ? `${c} correct &middot; ${rk.next.at - c} more to make ${rk.next.name}` : `${c} correct &middot; Top rank. Keep training.`}</div>
         ${rk.next ? `<div class="bar" style="margin-top:6px"><i style="width:${pct(c - rk.at, rk.next.at - rk.at)}%"></i></div>` : ''}</div></div></div>
@@ -153,8 +160,9 @@ function dashboard() {
   <div class="card"><h2>Performance by subject</h2>
     ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th><span class="sr">Progress</span></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
-  <a class="btn primary" href="#/create">Create a new test</a>`;
-  Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 4 });
+  `;
+  document.getElementById('cover-text').innerHTML = `<h2 class="pagetitle">Dashboard</h2><p>${esc(headline)}</p><a class="btn primary" href="#/create">Create a new test</a>`;
+  if (mascotOn()) Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 5 });
 }
 
 // ---------- create test ----------
@@ -215,8 +223,8 @@ function renderTest() {
     const s = Store.qstat(qid); if (s && s.flagged) c += 'flag ';
     return `<button class="${c}" data-go="${i}">${i + 1}</button>`;
   }).join('');
-  $app.innerHTML = `
-  <div class="card">
+  $app.innerHTML = `<div class="testlayout"><div class="testmain">
+  <div class="card qcard">
     <div class="row spread"><div>${q.boards.map(b => `<span class="tag">${esc(boardName(b))}</span>`).join('')}${isDraft(q) ? '<span class="tag draft" title="Not yet reviewed by a physician">Draft</span>' : ''}<span class="muted">${esc(q.subject)}${q.topic && shown ? ' · ' + esc(q.topic) : ''}</span></div>
       <div class="muted">Question ${t.idx + 1} of ${t.qids.length}</div></div>
     <p class="stem">${esc(q.stem)}</p>
@@ -238,18 +246,19 @@ function renderTest() {
       <span style="flex:1"></span><button class="danger" id="end">End test</button>
     </div>
     <details style="margin-top:12px"><summary>Notes</summary><textarea id="note" rows="3" placeholder="Your notes on this question">${esc(st ? st.note : '')}</textarea></details>
-  </div>
-  <div class="card"><div class="nav">${nav}</div></div>
+  </div></div>
+  <aside class="card navcard" aria-label="Question navigator"><h2 class="navh">Questions</h2><div class="nav">${nav}</div>
+    <p class="muted small legend">${t.qids.filter(x => t.answers[x]).length} of ${t.qids.length} answered</p><div class="bar" aria-hidden="true"><i style="width:${Math.round(100 * t.qids.filter(x => t.answers[x]).length / t.qids.length)}%"></i></div></aside></div>
   <div style="height:110px"></div><div id="coach" class="coach"></div>`;
   let streak = 0;
   if (shown && sel === q.answer) for (let i = t.idx; i >= 0 && t.revealed[t.qids[i]] && t.answers[t.qids[i]] === bank.byId[t.qids[i]].answer; i--) streak++;
   const L = Mascot.lines;
   const coach = shown
     ? (sel === q.answer
-      ? { pose: streak >= 3 ? 'cheer' : 'happy', msg: streak >= 3 ? `${streak} in a row! Squared away.` : Mascot.pick(L.correct, id) }
+      ? { pose: streak >= 3 ? 'cheer' : 'happy', msg: streak >= 3 ? `${streak} in a row. Nicely done.` : Mascot.pick(L.correct, id) }
       : { pose: 'sad', msg: Mascot.pick(L.wrong, id) })
     : { pose: 'idle', msg: tutor || t.idx === 0 ? Mascot.pick(L.tips, id + t.idx) : '' };
-  Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 3 });
+  if (mascotOn()) Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 3 });
   bindTest(t, q); hydrateImages();
   if (refocus) { const f = $app.querySelector(`[data-opt="${refocus}"]`); if (f) f.focus(); refocus = null; }
 }
@@ -332,7 +341,7 @@ function results(id) {
     <div class="stat"><b>${r.mode}</b><span class="muted">Mode</span></div></div></div>
     <div class="card"><h3>By subject</h3><table><tbody>${Object.entries(by).map(([s, o]) => `<tr><td>${esc(s)}</td><td>${o.c}/${o.n}</td><td>${pct(o.c, o.n)}%</td></tr>`).join('')}</tbody></table></div>
     <a class="btn primary" href="#/review/${r.id}">Review questions</a> <a class="btn" href="#/create">New test</a>`;
-  Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding! That is board-ready work. Hooah!' } : p >= 60 ? { pose: 'happy', msg: 'Solid mission. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough exercise. Review makes it stick, and I\'m with you for the next rep.' });
+  if (mascotOn()) Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding. That is board-ready work.' } : p >= 60 ? { pose: 'happy', msg: 'Solid work. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough exercise. Review makes it stick, and I\'m with you for the next rep.' });
 }
 
 function review(id) {
@@ -367,7 +376,8 @@ function settings() {
   const th = Store.data.settings.theme;
   $app.innerHTML = `<div class="card"><h2>Settings</h2>
     <p><label for="theme">Theme</label> <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
-    <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label></div>
+    ${!Cloud.enabled || Admin.isEditor() ? `<label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label>` : ''}
+    <label class="chk"><input type="checkbox" id="mascot" ${mascotOn() ? 'checked' : ''}> Show the mascot and encouragement</label></div>
     ${Cloud.enabled ? `<div class="card"><h3>Account</h3>
       <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.role === 'reviewer' ? 'Reviewer' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
       <p class="muted" id="syncline"></p>
@@ -381,7 +391,8 @@ function settings() {
       <div class="row"><button class="danger" id="reset">Reset all progress</button></div></div>`
     : `<div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
       <div class="row"><button id="exp">Export progress</button><button id="imp">Import progress</button><input type="file" id="file" accept="application/json" hidden><button class="danger" id="reset">Reset all progress</button></div></div>`}`;
-  document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.touchSettings(); };
+  if (document.getElementById('drafts')) document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.touchSettings(); };
+  document.getElementById('mascot').onchange = e => { Store.data.settings.mascot = e.target.checked; Store.save(); };
   document.getElementById('theme').onchange = e => { Store.data.settings.theme = e.target.value; Store.touchSettings(); applyTheme(); };
   if (!Cloud.enabled) {
     document.getElementById('exp').onclick = () => {
@@ -418,13 +429,12 @@ function lockUI(on) { document.body.classList.toggle('locked', on); if (on) { $t
 function renderSignIn(note = '') {
   pageTitle('Sign in');
   ready = false; lockUI(true);
-  $app.innerHTML = `<div class="card signin"><div id="si-mascot"></div><h2>Sign in</h2>${note ? `<p class="notice">${esc(note)}</p>` : ''}
+  $app.innerHTML = `<div class="card signin"><div class="signin-brand"><img class="logo" src="icons/logo.svg" alt="" width="44" height="44"><span class="wordmark big">AeroMed<b>QBank</b></span></div><h2>Sign in</h2>${note ? `<p class="notice">${esc(note)}</p>` : ''}
     <form id="si"><label for="si-email">Email</label><input id="si-email" type="email" autocomplete="username" required>
     <label for="si-pw">Password</label><input id="si-pw" type="password" autocomplete="current-password" required>
     <p class="notice" id="si-err" hidden></p>
     <div class="row"><button class="primary" type="submit" id="si-go">Sign in</button><button type="button" class="linkish" id="si-forgot">Forgot password?</button></div></form>
     <p class="muted">Access is by invitation. Ask your program lead if you need an account. By signing in you agree to the <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p></div>`;
-  Mascot.mount(document.getElementById('si-mascot'), { pose: 'idle', msg: 'Sign in to start training, Doc.', scale: 3 });
   const err = document.getElementById('si-err'), go = document.getElementById('si-go');
   const fail = m => { err.textContent = m; err.hidden = false; go.disabled = false; };
   document.getElementById('si').onsubmit = async e => {
@@ -443,7 +453,7 @@ function renderSignIn(note = '') {
 function renderSetPassword(kind) {
   pageTitle('Choose a password');
   ready = false; lockUI(true);
-  $app.innerHTML = `<div class="card signin"><h2>${kind === 'invite' ? 'Welcome. Choose a password' : 'Choose a new password'}</h2>
+  $app.innerHTML = `<div class="card signin"><h2>${kind === 'invite' || kind === 'temp' ? 'Welcome. Choose your own password' : 'Choose a new password'}</h2>${kind === 'temp' ? '<p class="muted">You signed in with a temporary password. Choose one only you know.</p>' : ''}
     <form id="sp"><label for="sp-1">New password (at least 8 characters)</label><input id="sp-1" type="password" autocomplete="new-password" minlength="8" required>
     <label for="sp-2">Type it again</label><input id="sp-2" type="password" autocomplete="new-password" minlength="8" required>
     <p class="notice" id="sp-err" hidden></p><div class="row"><button class="primary" type="submit" id="sp-go">Save password</button></div></form></div>`;
@@ -452,7 +462,7 @@ function renderSetPassword(kind) {
     const a = document.getElementById('sp-1').value, b = document.getElementById('sp-2').value;
     if (a !== b) { err.textContent = 'The two passwords do not match.'; err.hidden = false; return; }
     go.disabled = true;
-    try { await Cloud.setPassword(a); await startSession(); } catch (x) { err.textContent = x.message; err.hidden = false; go.disabled = false; }
+    try { await (kind === 'temp' ? Cloud.choosePassword(a) : Cloud.setPassword(a)); await startSession(); } catch (x) { err.textContent = x.message; err.hidden = false; go.disabled = false; }
   };
 }
 
@@ -470,6 +480,7 @@ function renderBlocked(email) {
 async function startSession() {
   ready = false; lockUI(true);
   $app.innerHTML = '<div class="card"><p class="muted">Loading your questions...</p></div>';
+  if (Cloud.mustChangePassword) return renderSetPassword('temp');
   try {
     Store.use(Cloud.userKey()); applyTheme();
     profile = await Cloud.profile();
@@ -522,14 +533,14 @@ async function adminPage() {
         <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Members and their activity</caption><thead><tr><th scope="col">Email</th><th scope="col">Access</th><th scope="col">Answered</th><th scope="col">Correct</th><th scope="col">Last active</th></tr></thead><tbody>${mem.map(m =>
         `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.role === 'reviewer' ? 'Reviewer' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><h2>Approved emails</h2>
-        <p class="muted">Only these emails can use the app. <b>Reviewers</b> can edit and review questions but cannot see members. Approving an email does not create the account: also add the person under Authentication &gt; Users in Supabase (see the setup guide). Removing an email locks that person out at once.</p>
+        <p class="muted">Only these emails can use the app. <b>Reviewers</b> can edit and review questions but cannot see members. <b>Add member</b> approves the email and creates their account with a temporary password for you to send them privately; they choose their own password the first time they sign in. Removing an email locks that person out at once.</p>
         <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Approved emails</caption><thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Plan</th><th scope="col">Note</th><th scope="col"><span class="sr">Actions</span></th></tr></thead><tbody id="al">${allowed.map(r =>
         `<tr><td>${esc(r.email)}</td><td>${esc(r.role)}</td><td><select data-plan="${esc(r.email)}" aria-label="Plan for ${esc(r.email)}"><option${r.plan === 'pro' ? ' selected' : ''}>pro</option><option${r.plan === 'free' ? ' selected' : ''}>free</option></select></td><td>${esc(r.note || '')}</td>
-        <td>${r.email === me ? '<span class="muted">you</span>' : `<button data-rm="${esc(r.email)}" aria-label="Remove ${esc(r.email)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>
+        <td>${r.email === me ? '<span class="muted">you</span>' : `<button data-reset="${esc(r.email)}" aria-label="Reset password for ${esc(r.email)}">Reset password</button> <button data-rm="${esc(r.email)}" aria-label="Remove ${esc(r.email)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>
         <form id="addem" class="row" style="margin-top:12px;align-items:flex-end"><div><label for="ae-email">Email</label><input id="ae-email" type="email" required autocomplete="off"></div>
           <div><label for="ae-role">Role</label><select id="ae-role"><option>member</option><option>reviewer</option><option>admin</option></select></div>
           <div><label for="ae-plan">Plan</label><select id="ae-plan"><option>pro</option><option>free</option></select></div>
-          <div><label for="ae-note">Note</label><input id="ae-note" type="text" maxlength="80" autocomplete="off"></div><button class="primary" type="submit">Approve</button></form>
+          <div><label for="ae-note">Note</label><input id="ae-note" type="text" maxlength="80" autocomplete="off"></div><button class="primary" type="submit">Add member</button></form>
         <p class="notice" id="ae-msg" hidden role="alert"></p></div>
       <div class="card"><h2>Hardest questions</h2>${hard.length ? `<div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Questions with the lowest percent correct</caption><thead><tr><th scope="col">Question</th><th scope="col">Subject</th><th scope="col">Answered</th><th scope="col">Correct</th></tr></thead><tbody>${hard.map(q =>
         `<tr><td>${esc(q.question_id)}</td><td>${esc(q.subject)}</td><td>${q.attempts}</td><td>${Math.round(q.pct_correct)}%</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Shows up once questions have been answered at least 3 times.</p>'}</div>`;
@@ -545,9 +556,21 @@ async function adminPage() {
       e.preventDefault(); say('');
       const email = document.getElementById('ae-email').value.trim().toLowerCase(), role = document.getElementById('ae-role').value;
       if (email === me && role !== 'admin') return say('You cannot take away your own admin access.');
-      try { await upsert({ email, role, plan: document.getElementById('ae-plan').value, note: document.getElementById('ae-note').value.trim() || null }); toast('Approved ' + email); adminPage(); }
-      catch (x) { say(x.offline ? 'No connection.' : 'Could not save: ' + x.message); }
+      const plan = document.getElementById('ae-plan').value, note = document.getElementById('ae-note').value.trim() || null;
+      try {
+        try { const r = await Cloud.manageMember('create', { email, role, plan, note }); await showCredentials(r); adminPage(); return; }
+        catch (x) {
+          if (!x.notDeployed) throw x;
+          await upsert({ email, role, plan, note }); adminPage();          // account tools not deployed: fall back to approving only
+          toast(`Approved ${email}. Creating the account itself still needs Supabase (see the setup guide, step 4).`);
+        }
+      } catch (x) { say(x.offline ? 'No connection.' : 'Could not add: ' + x.message); }
     };
+    $app.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
+      const em = b.dataset.reset; if (!(await ask(`Make a new temporary password for ${em}? Their old password stops working.`, 'Reset password'))) return;
+      try { await showCredentials(await Cloud.manageMember('reset', { email: em })); }
+      catch (x) { say(x.notDeployed ? 'Account tools are not set up yet (see the setup guide).' : x.offline ? 'No connection.' : x.message); }
+    });
     $app.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
       const em = b.dataset.rm; if (!(await ask(`Remove ${em}? They will be locked out immediately. Their saved progress is kept.`, 'Remove'))) return;
       try { await Cloud.rest('allowed_emails?email=eq.' + encodeURIComponent(em), { method: 'DELETE' }); toast('Removed ' + em); adminPage(); } catch (x) { say('Could not remove: ' + x.message); }
@@ -557,6 +580,26 @@ async function adminPage() {
       try { await upsert({ email: r.email, role: r.role, plan: s.value, note: r.note }); toast(`${r.email} is now ${s.value}`); } catch (x) { say('Could not change: ' + x.message); adminPage(); }
     });
   } catch (e) { $app.innerHTML = `<div class="card"><h2>Admin</h2><p class="muted">Could not load: ${esc(e.message)}</p></div>`; }
+}
+
+// Shows a new temporary password once, with a ready-to-send message.
+function showCredentials(r) {
+  return new Promise(res => {
+    const site = location.href.split('#')[0].replace(/index\.html$/, '');
+    const msg = r.existed ? `You have been approved for AeroMedQBank. Sign in here with your existing password: ${site}`
+      : `Your AeroMedQBank account is ready.\nWebsite: ${site}\nEmail: ${r.email}\nTemporary password: ${r.password}\nYou will be asked to choose your own password when you first sign in.`;
+    const d = document.createElement('div'); d.className = 'modal';
+    d.innerHTML = `<div class="card" role="dialog" aria-modal="true" aria-labelledby="cr-h" style="max-width:480px"><h3 id="cr-h" style="margin-top:0">${r.existed ? 'Already has an account' : 'Account ready'}</h3>
+      <p>${r.existed ? esc(r.email) + ' already has an account. They are approved now and can sign in with their current password.' : `Send this to <b>${esc(r.email)}</b> privately (not in a group chat). <b>The password is shown only now.</b> If it is lost, use Reset password.`}</p>
+      <label for="cr-msg">Message</label><textarea id="cr-msg" rows="6" readonly>${esc(msg)}</textarea>
+      <div class="row" style="margin-top:12px"><button class="primary" id="cr-copy">Copy message</button><button id="cr-done">Done</button></div></div>`;
+    document.body.appendChild(d);
+    const close = () => { d.remove(); res(); };
+    d.querySelector('#cr-done').onclick = close;
+    d.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    d.querySelector('#cr-copy').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Copied.'); } catch { const t = d.querySelector('#cr-msg'); t.select(); toast('Select the text and copy it.'); } };
+    d.querySelector('#cr-copy').focus();
+  });
 }
 
 // ---------- boot ----------

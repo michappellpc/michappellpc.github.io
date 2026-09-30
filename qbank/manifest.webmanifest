@@ -1,6 +1,6 @@
 {
-  "name": "RAMQBank",
-  "short_name": "RAMQBank",
+  "name": "AeroMedQBank",
+  "short_name": "AeroMedQBank",
   "description": "Board-prep question bank for aerospace, occupational, and preventive medicine residents.",
   "start_url": "./",
   "scope": "./",

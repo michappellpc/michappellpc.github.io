@@ -49,7 +49,8 @@ const Cloud = (() => {
 
   function setSession(r) {
     const c = claims(r.access_token);
-    session = { access_token: r.access_token, refresh_token: r.refresh_token, expires_at: r.expires_at || now() + (r.expires_in || 3600), uid: (r.user && r.user.id) || c.sub, email: (r.user && r.user.email) || c.email };
+    session = { access_token: r.access_token, refresh_token: r.refresh_token, expires_at: r.expires_at || now() + (r.expires_in || 3600), uid: (r.user && r.user.id) || c.sub, email: (r.user && r.user.email) || c.email,
+      must: r.user ? !!(r.user.user_metadata && r.user.user_metadata.must_change_password) : !!(session && session.must) };
     jset(S_KEY, session);
   }
   function clearSession() { session = null; jdel(S_KEY); }
@@ -202,6 +203,23 @@ const Cloud = (() => {
     async recover(email) {
       try { await raw('/auth/v1/recover', { method: 'POST', body: { email } }); }
       catch (e) { if (e.offline) throw new Error('No connection.'); if (e.status === 429) throw new Error('Please wait a minute before asking again.'); }
+    },
+    // A new account made by an admin starts with a temporary password; this is the first-sign-in screen's way out.
+    get mustChangePassword() { return !!(session && session.must); },
+    async choosePassword(password) {
+      try { await api('/auth/v1/user', { method: 'PUT', body: { password, data: { must_change_password: false } } }); }
+      catch (e) { throw new Error(e.offline ? 'No connection.' : (e.message || 'Could not set the password.')); }
+      session.must = false; jset(S_KEY, session);
+    },
+    // Admin-only account tools, run by the member-admin function on Supabase's servers (see supabase/functions/member-admin).
+    async manageMember(action, fields) {
+      let res;
+      try { res = await fetch(cfg.url + '/functions/v1/member-admin', { method: 'POST', headers: { apikey: cfg.key, Authorization: 'Bearer ' + await token(), 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...fields }) }); }
+      catch (e) { throw e.auth ? e : offlineError(); }
+      let out = null; try { out = await res.json(); } catch {}
+      if (res.status === 404 && !(out && out.error)) throw Object.assign(new Error('Account tools are not set up yet.'), { notDeployed: true });
+      if (!res.ok) throw Object.assign(new Error((out && out.error) || `Request failed (${res.status})`), { status: res.status });
+      return out;
     },
     async setPassword(password) {
       try { await api('/auth/v1/user', { method: 'PUT', body: { password } }); }

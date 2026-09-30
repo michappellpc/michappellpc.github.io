@@ -25,6 +25,10 @@ insert into questions (id, boards, subject, stem, options, answer, explanation, 
 insert into attempts (user_id, question_id, ok, client_id) values ('${U[a]}','q-arch',true,'arch1');
 insert into storage.buckets (id, name) values ('other-bucket','other-bucket') on conflict do nothing;
 insert into storage.objects (bucket_id, name) values ('question-images','pro.png'), ('question-images','free.png'), ('question-images','orphan.png'), ('question-images','arch.png'), ('other-bucket','pro.png');
+update questions set status = 'reviewed';       -- everything above is live; the draft below is not
+insert into questions (id, boards, subject, stem, options, answer, explanation, tier, image, image_alt) values
+  ('q-draft','{aem}','S','draft stem','[{"id":"A","text":"x"}]','A','why','free','private:draft.png','alt');
+insert into storage.objects (bucket_id, name) values ('question-images','draft.png');
 SQL
 
 PASS=0; FAIL=0
@@ -56,6 +60,16 @@ eq  "unlisted person sees nothing"               "0" "$(as c "select count(*) fr
 eq  "removed person sees nothing"                "0" "$(as e "select count(*) from questions;")"
 eq  "pro member sees free + pro"                 "4" "$(as a "select count(*) from questions;")"
 eq  "free member sees only free tier"            "2" "$(as d "select count(*) from questions;")"
+eq  "a draft is invisible to a pro member"        "0" "$(as a "select count(*) from questions where id='q-draft';")"
+eq  "a draft is invisible to a free member"       "0" "$(as d "select count(*) from questions where id='q-draft';")"
+eq  "a reviewer can see the draft"                "1" "$(as rev "select count(*) from questions where id='q-draft';")"
+eq  "an admin can see the draft"                  "1" "$(as admin "select count(*) from questions where id='q-draft';")"
+eq  "a draft's picture is hidden from members"    "0" "$(as a "select count(*) from storage.objects where bucket_id='question-images' and name='draft.png';")"
+eq  "a draft's picture is visible to a reviewer"  "1" "$(as rev "select count(*) from storage.objects where bucket_id='question-images' and name='draft.png';")"
+root "update questions set status='reviewed' where id='q-draft'" >/dev/null
+eq  "once reviewed, the question goes live"       "1" "$(as a "select count(*) from questions where id='q-draft';")"
+eq  "and its picture goes live with it"           "1" "$(as a "select count(*) from storage.objects where bucket_id='question-images' and name='draft.png';")"
+root "update questions set status='draft' where id='q-draft'" >/dev/null
 eq  "free member cannot fetch a pro question"    "0" "$(as d "select count(*) from questions where id='q-pro';")"
 has "member cannot add a question"               "row-level security" "$(as a "insert into questions (id,boards,subject,stem,options,answer,explanation) values ('x','{aem}','S','s','[]','A','e');")"
 has "member cannot edit a question"              "" "$(as a "update questions set stem='hacked' where id='q-free'; select stem from questions where id='q-free';")"

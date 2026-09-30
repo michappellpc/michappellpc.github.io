@@ -1,4 +1,4 @@
--- RAMQBank database. Run once in Supabase: SQL Editor -> New query -> paste this whole file -> Run.
+-- AeroMedQBank database. Run once in Supabase: SQL Editor -> New query -> paste this whole file -> Run.
 -- Safe to re-run: it only creates what is missing and replaces functions/policies.
 --
 -- The privacy model
@@ -173,7 +173,7 @@ drop policy if exists settings_own       on public.user_settings;
 
 create policy allowed_admin   on public.allowed_emails for all    to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy profiles_read   on public.profiles       for select to authenticated using (id = auth.uid() or public.is_admin());
-create policy questions_read  on public.questions      for select to authenticated using (public.has_plan(tier) and not archived);
+create policy questions_read  on public.questions      for select to authenticated using (public.has_plan(tier) and not archived and status = 'reviewed');   -- drafts are visible to admins and reviewers only
 create policy questions_edit  on public.questions      for all    to authenticated using (public.can_edit()) with check (public.can_edit());
 create policy attempts_read   on public.attempts       for select to authenticated using (user_id = auth.uid() and public.is_active());
 create policy attempts_insert on public.attempts       for insert to authenticated
