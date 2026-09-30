@@ -80,7 +80,7 @@ function dashboard() {
     ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
   <a class="btn primary" href="#/create">Create a new test</a>`;
-  Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 6 });
+  Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 5 });
 }
 
 // ---------- create test ----------
