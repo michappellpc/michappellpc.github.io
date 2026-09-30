@@ -2,7 +2,7 @@
 const $app = document.getElementById('app'), $timer = document.getElementById('timer');
 let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {} };
 const APP_VERSION = '1.3';
-let tick = null, ready = false, profile = null;
+let tick = null, ready = false, profile = null, refocus = null;
 
 // ---------- helpers ----------
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -13,6 +13,22 @@ const boardName = id => (bank.boards.find(b => b.id === id) || {}).name || id;
 const isDraft = q => q.status !== 'reviewed';
 const showDrafts = () => Store.data.settings.showDrafts !== false;
 const notesText = q => q.optionNotes ? '\n\nAnswer choices:\n' + q.options.filter(o => q.optionNotes[o.id]).map(o => esc(`${o.id}. ${q.optionNotes[o.id]}`)).join('\n') : '';
+const csvCell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+const privImg = q => (q.image && q.image.startsWith('private:') ? q.image.slice(8) : null);
+const imgTag = q => !q.image ? '' : privImg(q)
+  ? `<img class="qimg" data-zoom data-private="${esc(privImg(q))}" alt="${esc(q.imageAlt || '')}" title="Tap to enlarge" hidden><p class="muted" data-imgnote>Loading image...</p>`
+  : `<img class="qimg" data-zoom src="${esc(q.image)}" alt="${esc(q.imageAlt || '')}" title="Tap to enlarge">`;
+async function hydrateImages() {
+  for (const im of $app.querySelectorAll('img[data-private]')) {
+    const note = im.nextElementSibling && im.nextElementSibling.hasAttribute('data-imgnote') ? im.nextElementSibling : null;
+    try {
+      if (!Cloud.enabled) throw new Error('demo');
+      im.src = await Cloud.image(im.dataset.private); im.hidden = false; if (note) note.remove();
+    } catch { if (note) note.textContent = 'Image unavailable' + (im.alt ? ': ' + im.alt : '') + (navigator.onLine === false ? ' (you are offline and this device has not saved it yet)' : ''); }
+  }
+}
+function labelScrolls() { $app.querySelectorAll('.scroll').forEach(b => { const h = b.closest('.card') && b.closest('.card').querySelector('h2,h3'); b.setAttribute('aria-label', (h ? h.textContent : 'Data') + ' table'); }); }
+function pageTitle(t) { const h = document.getElementById('page-title'); if (h) h.textContent = t; document.title = t + ' | Ram QBank'; }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function applyTheme() {
@@ -67,7 +83,7 @@ function feedbackDialog(q) {
   const url = formUrl(), ref = `${q.id} (${q.subject}${q.topic ? ' / ' + q.topic : ''})`;
   const d = document.createElement('div'); d.className = 'modal';
   d.innerHTML = `<div class="card fb" role="dialog" aria-label="Question feedback">
-    <h3>Question feedback</h3>
+    <h2>Question feedback</h2>
     ${url ? `<p>Found a mistake or have a suggestion? Tell the team using a short form. It opens in a new tab.</p>
     <p class="muted">1. Copy this question's reference and paste it into the form:</p>
     <div class="row" style="flex-wrap:nowrap"><input id="fb-ref" type="text" readonly value="${esc(ref)}" aria-label="Question reference"><button id="fb-copy" type="button">Copy</button></div>
@@ -102,6 +118,7 @@ window.addEventListener('hashchange', route);
 
 // ---------- dashboard ----------
 function dashboard() {
+  pageTitle('Dashboard');
   const st = Store.data.q, all = Object.values(st);
   const used = all.filter(s => s.seen).length, c = all.reduce((a, s) => a + s.correct, 0), w = all.reduce((a, s) => a + s.wrong, 0);
   const rows = [];
@@ -134,7 +151,7 @@ function dashboard() {
     <div class="card stat"><b>${all.filter(s => s.flagged).length}</b><span class="muted">Flagged</span></div>
   </div>
   <div class="card"><h2>Performance by subject</h2>
-    ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
+    ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th><span class="sr">Progress</span></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
   <a class="btn primary" href="#/create">Create a new test</a>`;
   Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 4 });
@@ -142,6 +159,7 @@ function dashboard() {
 
 // ---------- create test ----------
 function create() {
+  pageTitle('New test');
   const boardBoxes = bank.boards.map(b => `<label class="chk"><input type="checkbox" name="board" value="${b.id}" checked> ${esc(b.name)}</label>`).join('');
   const subjects = [...new Set(Object.values(bank.subjects).flat())];
   const subjBoxes = subjects.map(s => `<label class="chk"><input type="checkbox" name="subj" value="${esc(s)}" checked> ${esc(s)}</label>`).join('');
@@ -153,7 +171,7 @@ function create() {
     <fieldset><legend>Subjects</legend><div class="row"><button type="button" id="all">All</button><button type="button" id="none">None</button></div>${subjBoxes}</fieldset>
     <fieldset><legend>Question status</legend>
       ${[['unused', 'Unused'], ['incorrect', 'Previously incorrect'], ['flagged', 'Flagged'], ['all', 'All']].map(([v, l], i) => `<label class="chk"><input type="checkbox" name="status" value="${v}" ${i == 0 ? 'checked' : ''}> ${l}</label>`).join('')}</fieldset>
-    <p>Number of questions: <input type="number" id="n" min="1" value="20"> <span class="muted" id="avail"></span></p>
+    <p><label for="n">Number of questions</label> <input type="number" id="n" min="1" value="20"> <span class="muted" id="avail" aria-live="polite"></span></p>
     <button class="primary" id="go">Start test</button></form></div>`;
   const f = document.getElementById('f');
   const vals = n => [...f.querySelectorAll(`[name=${n}]:checked`)].map(e => e.value);
@@ -185,7 +203,8 @@ function renderTest() {
   const t = Store.data.active;
   if (!t) return (location.hash = '#/');
   const q = bank.byId[t.qids[t.idx]], id = q.id;
-  const tutor = t.mode === 'tutor', shown = tutor && t.revealed[id], sel = t.answers[id], st = Store.qstat(id);
+  pageTitle(`Question ${t.idx + 1} of ${t.qids.length}`);
+  const tutor = t.mode === 'tutor', shown = tutor && t.revealed[id], sel = t.answers[id], st = Store.qstat(id), locked0 = !!shown;
   const struck = t.struck[id] || [];
   if (t.limit) startTimer(t);
   else { $timer.hidden = false; tick = setInterval(() => $timer.textContent = fmt(elapsed(t)), 500); $timer.textContent = fmt(elapsed(t)); }
@@ -201,12 +220,13 @@ function renderTest() {
     <div class="row spread"><div>${q.boards.map(b => `<span class="tag">${esc(boardName(b))}</span>`).join('')}${isDraft(q) ? '<span class="tag draft" title="Not yet reviewed by a physician">Draft</span>' : ''}<span class="muted">${esc(q.subject)}${q.topic && shown ? ' · ' + esc(q.topic) : ''}</span></div>
       <div class="muted">Question ${t.idx + 1} of ${t.qids.length}</div></div>
     <p class="stem">${esc(q.stem)}</p>
-    ${q.image ? `<img class="qimg" data-zoom src="${esc(q.image)}" alt="${esc(q.imageAlt || '')}" title="Tap to enlarge">` : ''}
-    <div id="opts">${q.options.map((o, i) => {
+    ${imgTag(q)}
+    <div id="opts" role="radiogroup" aria-label="Answer choices">${q.options.map(o => {
       let c = 'opt'; if (sel === o.id) c += ' sel'; if (struck.includes(o.id)) c += ' struck';
       if (shown) { if (o.id === q.answer) c += ' correct'; else if (sel === o.id) c += ' wrong'; }
-      return `<div class="${c}" data-opt="${esc(o.id)}" role="button" tabindex="0"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}</span>
-        ${shown ? '' : `<button class="x" data-strike="${esc(o.id)}" title="Cross out">✕</button>`}</div>`;
+      const tab = locked0 ? -1 : (sel ? (sel === o.id ? 0 : -1) : (o === q.options[0] ? 0 : -1));
+      return `<div class="optrow"><div class="${c}" data-opt="${esc(o.id)}" role="radio" aria-checked="${sel === o.id}" ${locked0 ? 'aria-disabled="true"' : ''} tabindex="${tab}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}${struck.includes(o.id) ? '<span class="sr"> (crossed out)</span>' : ''}${shown && o.id === q.answer ? '<span class="sr"> (correct answer)</span>' : ''}</span></div>
+        ${shown ? '' : `<button class="x" data-strike="${esc(o.id)}" aria-pressed="${struck.includes(o.id)}" aria-label="Cross out choice ${esc(o.id)}" title="Cross out">✕</button>`}</div>`;
     }).join('')}</div>
     ${shown ? `<div class="expl"><b>${sel === q.answer ? 'Correct' : 'Incorrect'}.</b> Correct answer: ${esc(q.answer)}.\n\n${esc(q.explanation)}${notesText(q)}${q.references && q.references.length ? `\n\n<span class="muted">References: ${q.references.map(esc).join('; ')}</span>` : ''}</div>` : ''}
     <div class="row" style="margin-top:14px">
@@ -230,7 +250,8 @@ function renderTest() {
       : { pose: 'sad', msg: Mascot.pick(L.wrong, id) })
     : { pose: 'idle', msg: tutor || t.idx === 0 ? Mascot.pick(L.tips, id + t.idx) : '' };
   Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 3 });
-  bindTest(t, q);
+  bindTest(t, q); hydrateImages();
+  if (refocus) { const f = $app.querySelector(`[data-opt="${refocus}"]`); if (f) f.focus(); refocus = null; }
 }
 
 function elapsed(t) { return t.elapsed + (Date.now() - t.started) / 1000; }
@@ -244,12 +265,19 @@ function persist(t) { t.elapsed = elapsed(t); t.started = Date.now(); Store.save
 function bindTest(t, q) {
   const id = q.id, tutor = t.mode === 'tutor', locked = tutor && t.revealed[id];
   const go = i => { t.idx = Math.min(t.qids.length - 1, Math.max(0, i)); persist(t); renderTest(); };
-  $app.querySelectorAll('[data-opt]').forEach(el => {
-    const pick = () => { if (locked) return; t.answers[id] = el.dataset.opt; persist(t); renderTest(); };
-    el.onclick = pick; el.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); pick(); } };
+  const opts = [...$app.querySelectorAll('[data-opt]')];
+  opts.forEach((el, i) => {
+    const pick = (keyboard, target = el) => { if (locked) return; t.answers[id] = target.dataset.opt; refocus = keyboard ? target.dataset.opt : null; persist(t); renderTest(); };
+    el.onclick = () => pick(false);
+    el.onkeydown = e => {
+      if (e.key === ' ') { e.preventDefault(); pick(true); }
+      else if (/^Arrow(Down|Right)$/.test(e.key)) { e.preventDefault(); pick(true, opts[(i + 1) % opts.length]); }
+      else if (/^Arrow(Up|Left)$/.test(e.key)) { e.preventDefault(); pick(true, opts[(i - 1 + opts.length) % opts.length]); }
+    };
   });
   $app.querySelectorAll('[data-strike]').forEach(b => b.onclick = e => {
     e.stopPropagation(); const a = t.struck[id] ||= [], k = b.dataset.strike, i = a.indexOf(k); i < 0 ? a.push(k) : a.splice(i, 1); persist(t); renderTest();
+    const again = $app.querySelector(`[data-strike="${k}"]`); if (again) again.focus();
   });
   bindZoom();
   $app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(+b.dataset.go));
@@ -266,6 +294,7 @@ function bindTest(t, q) {
   document.onkeydown = e => {
     if (location.hash !== '#/test' || /TEXTAREA|INPUT|SELECT/.test(e.target.tagName) || document.querySelector('.modal')) return;
     const k = e.key.toUpperCase();
+    if ((k === 'ENTER' || k === ' ') && /^(BUTTON|A)$/.test(e.target.tagName)) return;   // a focused button or link handles its own Enter/Space
     if (k === 'ARROWRIGHT') go(t.idx + 1); else if (k === 'ARROWLEFT') go(t.idx - 1);
     else if (k === 'F') { Store.toggleFlag(id); renderTest(); }
     else if (k === 'ENTER') { if (tutor && !t.revealed[id]) submit(); else go(t.idx + 1); }
@@ -292,6 +321,7 @@ function finish() {
 
 // ---------- results / review / history ----------
 function results(id) {
+  pageTitle('Results');
   const r = Store.data.tests.find(x => x.id === id); if (!r) return (location.hash = '#/history');
   const by = {};
   r.qids.forEach(qid => { const q = bank.byId[qid]; if (!q) return; const o = by[q.subject] ||= { c: 0, n: 0 }; o.n++; if (r.answers[qid] === q.answer) o.c++; });
@@ -306,6 +336,7 @@ function results(id) {
 }
 
 function review(id) {
+  pageTitle('Review');
   const r = Store.data.tests.find(x => x.id === id); if (!r) return (location.hash = '#/history');
   $app.innerHTML = `<p><a href="#/results/${r.id}">← Results</a></p>` + r.qids.map((qid, i) => {
     const q = bank.byId[qid]; if (!q) return '';
@@ -313,30 +344,39 @@ function review(id) {
     return `<div class="card"><div class="muted">${i + 1}. ${esc(q.subject)} · ${esc(q.topic || '')} — <b style="color:var(--${ok ? 'good' : 'bad'})">${ok ? 'Correct' : mine ? 'Incorrect' : 'Unanswered'}</b></div>
       <p class="stem">${esc(q.stem)}</p>
       ${q.options.map(o => `<div class="opt ${o.id === q.answer ? 'correct' : o.id === mine ? 'wrong' : ''}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}</span></div>`).join('')}
-      ${q.image ? `<img class="qimg" data-zoom src="${esc(q.image)}" alt="${esc(q.imageAlt || '')}" title="Tap to enlarge">` : ''}
+      ${imgTag(q)}
       <div class="expl">${esc(q.explanation)}${notesText(q)}</div>
       <div class="row" style="margin-top:10px"><button data-fb="${esc(qid)}" title="Report a problem or suggest a change to this question">✎ Feedback</button></div></div>`;
   }).join('');
   bindZoom();
   $app.querySelectorAll('[data-fb]').forEach(b => b.onclick = () => feedbackDialog(bank.byId[b.dataset.fb]));
+  hydrateImages();
 }
 
 function historyPage() {
+  pageTitle('Test history');
   const T = Store.data.tests;
-  $app.innerHTML = `<div class="card"><h2>Test history</h2>${T.length ? `<table><thead><tr><th>Date</th><th>Mode</th><th>Score</th><th>Time</th><th></th></tr></thead><tbody>${T.map(r =>
+  $app.innerHTML = `<div class="card"><h2>Test history</h2>${T.length ? `<table><thead><tr><th>Date</th><th>Mode</th><th>Score</th><th>Time</th><th><span class="sr">Details</span></th></tr></thead><tbody>${T.map(r =>
     `<tr><td>${new Date(r.date).toLocaleString()}</td><td>${r.mode}</td><td>${r.correct}/${r.total} (${pct(r.correct, r.total)}%)</td><td>${fmt(r.seconds)}</td><td><a href="#/results/${r.id}">View</a></td></tr>`).join('')}</tbody></table>` : '<p class="muted">No completed tests yet.</p>'}</div>`;
+  labelScrolls();
 }
 
 // ---------- settings ----------
 function settings() {
+  pageTitle('Settings');
   const th = Store.data.settings.theme;
   $app.innerHTML = `<div class="card"><h2>Settings</h2>
-    <p>Theme <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
+    <p><label for="theme">Theme</label> <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
     <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label></div>
     ${Cloud.enabled ? `<div class="card"><h3>Account</h3>
       <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
       <p class="muted" id="syncline"></p>
       <div class="row"><button id="syncnow">Sync now</button><button id="signout">Sign out</button></div></div>
+    <div class="card"><h3>Change password</h3>
+      <form id="pw" style="max-width:380px"><label for="pw-cur">Current password</label><input id="pw-cur" type="password" autocomplete="current-password" required>
+      <label for="pw-new">New password (at least 8 characters)</label><input id="pw-new" type="password" autocomplete="new-password" minlength="8" required>
+      <label for="pw-new2">Type the new password again</label><input id="pw-new2" type="password" autocomplete="new-password" minlength="8" required>
+      <p class="notice" id="pw-msg" hidden role="alert"></p><div class="row" style="margin-top:12px"><button class="primary" type="submit" id="pw-go">Change password</button></div></form></div>
     <div class="card"><h3>Your data</h3><p class="muted">Your progress is saved to your account and kept on this device so the app works offline.</p>
       <div class="row"><button class="danger" id="reset">Reset all progress</button></div></div>`
     : `<div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
@@ -358,6 +398,16 @@ function settings() {
     paint();
     document.getElementById('syncnow').onclick = async () => { line.textContent = 'Syncing...'; try { await Cloud.sync(); } catch (e) { toast(e.offline ? 'No connection. Your changes are saved on this device.' : 'Could not sync. Try again shortly.'); } paint(); };
     document.getElementById('signout').onclick = () => signOut();
+    document.getElementById('pw').onsubmit = async e => {
+      e.preventDefault(); const msg = document.getElementById('pw-msg'), go = document.getElementById('pw-go');
+      const cur = document.getElementById('pw-cur').value, n1 = document.getElementById('pw-new').value, n2 = document.getElementById('pw-new2').value;
+      const say = t => { msg.textContent = t; msg.hidden = false; };
+      if (n1 !== n2) return say('The two new passwords do not match.');
+      if (n1 === cur) return say('Choose a password that is different from your current one.');
+      go.disabled = true; msg.hidden = true;
+      try { await Cloud.changePassword(cur, n1); e.target.reset(); toast('Password changed.'); } catch (x) { say(x.message); }
+      go.disabled = false;
+    };
   }
   document.getElementById('reset').onclick = async () => { if (await ask('Delete ALL progress? This cannot be undone.', 'Delete everything')) { Store.reset(); location.hash = '#/'; route(); } };
 }
@@ -366,13 +416,14 @@ function settings() {
 function lockUI(on) { document.body.classList.toggle('locked', on); if (on) { $timer.hidden = true; clearInterval(tick); Mascot.stop(); } }
 
 function renderSignIn(note = '') {
+  pageTitle('Sign in');
   ready = false; lockUI(true);
   $app.innerHTML = `<div class="card signin"><div id="si-mascot"></div><h2>Sign in</h2>${note ? `<p class="notice">${esc(note)}</p>` : ''}
     <form id="si"><label for="si-email">Email</label><input id="si-email" type="email" autocomplete="username" required>
     <label for="si-pw">Password</label><input id="si-pw" type="password" autocomplete="current-password" required>
     <p class="notice" id="si-err" hidden></p>
     <div class="row"><button class="primary" type="submit" id="si-go">Sign in</button><button type="button" class="linkish" id="si-forgot">Forgot password?</button></div></form>
-    <p class="muted">Access is by invitation. Ask your program lead if you need an account.</p></div>`;
+    <p class="muted">Access is by invitation. Ask your program lead if you need an account. By signing in you agree to the <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p></div>`;
   Mascot.mount(document.getElementById('si-mascot'), { pose: 'idle', msg: 'Sign in to start training, Doc.', scale: 3 });
   const err = document.getElementById('si-err'), go = document.getElementById('si-go');
   const fail = m => { err.textContent = m; err.hidden = false; go.disabled = false; };
@@ -390,6 +441,7 @@ function renderSignIn(note = '') {
 }
 
 function renderSetPassword(kind) {
+  pageTitle('Choose a password');
   ready = false; lockUI(true);
   $app.innerHTML = `<div class="card signin"><h2>${kind === 'invite' ? 'Welcome. Choose a password' : 'Choose a new password'}</h2>
     <form id="sp"><label for="sp-1">New password (at least 8 characters)</label><input id="sp-1" type="password" autocomplete="new-password" minlength="8" required>
@@ -405,6 +457,7 @@ function renderSetPassword(kind) {
 }
 
 function renderBlocked(email) {
+  pageTitle('Account not active');
   ready = false; lockUI(true);
   $app.innerHTML = `<div class="card signin"><h2>Account not active yet</h2>
     <p>You are signed in as <b>${esc(email)}</b>, but this email has not been approved for access.</p>
@@ -422,6 +475,7 @@ async function startSession() {
     profile = await Cloud.profile();
     if (!profile || !profile.active) return renderBlocked(Cloud.session.email);
     setQuestions(await Cloud.questions());
+    Cloud.prefetchImages(bank.questions.filter(privImg).map(privImg));   // in the background, so pictures also work offline
   } catch (e) {
     if (e.auth) return renderSignIn('Please sign in again.');
     $app.innerHTML = `<div class="card"><b>Could not load your questions.</b><p class="muted">${e.offline ? 'You are offline and this device has no saved copy yet. Connect once to download them.' : esc(e.message)}</p><button class="primary" id="retry">Try again</button> <button id="bo">Sign out</button></div>`;
@@ -452,19 +506,55 @@ async function signOut() {
 }
 
 async function adminPage() {
+  pageTitle('Admin');
   if (!profile || profile.role !== 'admin') { $app.innerHTML = '<div class="card"><h2>Admin</h2><p class="muted">This page is for administrators.</p></div>'; return; }
   $app.innerHTML = '<div class="card"><p class="muted">Loading the group summary...</p></div>';
   try {
-    const [mem, qs] = await Promise.all([Cloud.rpc('admin_member_summary'), Cloud.rpc('admin_question_stats')]);
-    const act = mem.filter(m => m.active), tot = act.reduce((a, m) => a + m.attempts, 0), cor = act.reduce((a, m) => a + m.correct, 0);
-    const hard = qs.filter(q => q.attempts >= 3).sort((a, b) => a.pct_correct - b.pct_correct).slice(0, 15);
+    const [mem, qs, allowed] = await Promise.all([Cloud.rpc('admin_member_summary'), Cloud.rpc('admin_question_stats'), Cloud.rest('allowed_emails?select=*&order=email.asc')]);
+    const act = mem.filter(m => m.active), tot = act.reduce((x, m) => x + m.attempts, 0), cor = act.reduce((x, m) => x + m.correct, 0);
+    const hard = qs.filter(q => q.attempts >= 3).sort((x, y) => x.pct_correct - y.pct_correct).slice(0, 15);
+    const me = Cloud.session.email.toLowerCase();
     $app.innerHTML = `<div class="grid">
       <div class="card stat"><b>${act.length}</b><span>Active members</span></div><div class="card stat"><b>${tot}</b><span>Questions answered</span></div>
       <div class="card stat"><b>${tot ? pct(cor, tot) + '%' : '-'}</b><span>Group correct</span></div><div class="card stat"><b>${qs.length}</b><span>Questions in bank</span></div></div>
-      <div class="card"><h2>Members</h2><div style="overflow-x:auto"><table><thead><tr><th>Email</th><th>Access</th><th>Answered</th><th>Correct</th><th>Last active</th></tr></thead><tbody>${mem.map(m =>
+      <div class="card"><div class="row spread"><h2 style="margin:0">Members</h2><button id="csv">Download CSV</button></div>
+        <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Members and their activity</caption><thead><tr><th scope="col">Email</th><th scope="col">Access</th><th scope="col">Answered</th><th scope="col">Correct</th><th scope="col">Last active</th></tr></thead><tbody>${mem.map(m =>
         `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
-      <div class="card"><h2>Hardest questions</h2>${hard.length ? `<div style="overflow-x:auto"><table><thead><tr><th>Question</th><th>Subject</th><th>Answered</th><th>Correct</th></tr></thead><tbody>${hard.map(q =>
+      <div class="card"><h2>Approved emails</h2>
+        <p class="muted">Only these emails can use the app. Approving an email does not create the account: also add the person under Authentication &gt; Users in Supabase (see the setup guide). Removing an email locks that person out at once.</p>
+        <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Approved emails</caption><thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Plan</th><th scope="col">Note</th><th scope="col"><span class="sr">Actions</span></th></tr></thead><tbody id="al">${allowed.map(r =>
+        `<tr><td>${esc(r.email)}</td><td>${esc(r.role)}</td><td><select data-plan="${esc(r.email)}" aria-label="Plan for ${esc(r.email)}"><option${r.plan === 'pro' ? ' selected' : ''}>pro</option><option${r.plan === 'free' ? ' selected' : ''}>free</option></select></td><td>${esc(r.note || '')}</td>
+        <td>${r.email === me ? '<span class="muted">you</span>' : `<button data-rm="${esc(r.email)}" aria-label="Remove ${esc(r.email)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>
+        <form id="addem" class="row" style="margin-top:12px;align-items:flex-end"><div><label for="ae-email">Email</label><input id="ae-email" type="email" required autocomplete="off"></div>
+          <div><label for="ae-role">Role</label><select id="ae-role"><option>member</option><option>admin</option></select></div>
+          <div><label for="ae-plan">Plan</label><select id="ae-plan"><option>pro</option><option>free</option></select></div>
+          <div><label for="ae-note">Note</label><input id="ae-note" type="text" maxlength="80" autocomplete="off"></div><button class="primary" type="submit">Approve</button></form>
+        <p class="notice" id="ae-msg" hidden role="alert"></p></div>
+      <div class="card"><h2>Hardest questions</h2>${hard.length ? `<div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Questions with the lowest percent correct</caption><thead><tr><th scope="col">Question</th><th scope="col">Subject</th><th scope="col">Answered</th><th scope="col">Correct</th></tr></thead><tbody>${hard.map(q =>
         `<tr><td>${esc(q.question_id)}</td><td>${esc(q.subject)}</td><td>${q.attempts}</td><td>${Math.round(q.pct_correct)}%</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Shows up once questions have been answered at least 3 times.</p>'}</div>`;
+    labelScrolls();
+    const say = t => { const m = document.getElementById('ae-msg'); m.textContent = t; m.hidden = !t; };
+    const upsert = row => Cloud.rest('allowed_emails?on_conflict=email', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: [row] });
+    document.getElementById('csv').onclick = () => {
+      const rows = [['email', 'role', 'plan', 'approved', 'answered', 'correct', 'percent_correct', 'last_active'], ...mem.map(m => [m.email, m.role, m.plan, m.active ? 'yes' : 'no', m.attempts, m.correct, m.attempts ? pct(m.correct, m.attempts) : '', m.last_active || ''])];
+      const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob(['\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv' }));
+      link.download = 'ram-qbank-members-' + new Date().toISOString().slice(0, 10) + '.csv'; link.click();
+    };
+    document.getElementById('addem').onsubmit = async e => {
+      e.preventDefault(); say('');
+      const email = document.getElementById('ae-email').value.trim().toLowerCase(), role = document.getElementById('ae-role').value;
+      if (email === me && role !== 'admin') return say('You cannot take away your own admin access.');
+      try { await upsert({ email, role, plan: document.getElementById('ae-plan').value, note: document.getElementById('ae-note').value.trim() || null }); toast('Approved ' + email); adminPage(); }
+      catch (x) { say(x.offline ? 'No connection.' : 'Could not save: ' + x.message); }
+    };
+    $app.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+      const em = b.dataset.rm; if (!(await ask(`Remove ${em}? They will be locked out immediately. Their saved progress is kept.`, 'Remove'))) return;
+      try { await Cloud.rest('allowed_emails?email=eq.' + encodeURIComponent(em), { method: 'DELETE' }); toast('Removed ' + em); adminPage(); } catch (x) { say('Could not remove: ' + x.message); }
+    });
+    $app.querySelectorAll('[data-plan]').forEach(s => s.onchange = async () => {
+      const r = allowed.find(x => x.email === s.dataset.plan);
+      try { await upsert({ email: r.email, role: r.role, plan: s.value, note: r.note }); toast(`${r.email} is now ${s.value}`); } catch (x) { say('Could not change: ' + x.message); adminPage(); }
+    });
   } catch (e) { $app.innerHTML = `<div class="card"><h2>Admin</h2><p class="muted">Could not load: ${esc(e.message)}</p></div>`; }
 }
 

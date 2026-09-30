@@ -37,6 +37,16 @@ const Cloud = (() => {
     throw Object.assign(new Error(msg || `Request failed (${res.status})`), { status: res.status });
   }
 
+  async function blobApi(path, retried = false) {
+    let res;
+    try { res = await fetch(cfg.url + path, { headers: { apikey: cfg.key, Authorization: 'Bearer ' + await token() } }); }
+    catch (e) { throw e.auth ? e : offlineError(); }
+    if (res.status === 401 && !retried && session) { session.expires_at = 0; await refresh(); return blobApi(path, true); }
+    if (!res.ok) throw Object.assign(new Error('Image unavailable'), { status: res.status });
+    return res.blob();
+  }
+  const imageUrls = new Map();   // path -> object URL, so a picture is only fetched once per visit
+
   function setSession(r) {
     const c = claims(r.access_token);
     session = { access_token: r.access_token, refresh_token: r.refresh_token, expires_at: r.expires_at || now() + (r.expires_in || 3600), uid: (r.user && r.user.id) || c.sub, email: (r.user && r.user.email) || c.email };
@@ -170,6 +180,15 @@ const Cloud = (() => {
       try { await api('/auth/v1/user', { method: 'PUT', body: { password } }); }
       catch (e) { throw new Error(e.offline ? 'No connection.' : (e.message || 'Could not set the password.')); }
     },
+    // Verifies the current password first, so a borrowed, unlocked device can't be used to take over the account.
+    async changePassword(current, next) {
+      try { setSession(await raw('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: session.email, password: current } })); }
+      catch (e) { throw new Error(e.offline ? 'No connection.' : e.status === 400 ? 'Your current password is not correct.' : 'Could not check your password. Try again.'); }
+      try { await api('/auth/v1/user', { method: 'PUT', body: { password: next } }); }
+      catch (e) { throw new Error(e.offline ? 'No connection.' : (e.message || 'Could not change the password.')); }
+    },
+    // Admin-only tables and functions (the database rules refuse everyone else)
+    rest: (path, opts) => api('/rest/v1/' + path, opts),
     // Links from invite / password-reset emails arrive as #access_token=...&type=recovery
     consumeLink() {
       if (!cfg) return null;
@@ -186,7 +205,7 @@ const Cloud = (() => {
       const u = uid();
       try { if (session) await raw('/auth/v1/logout', { method: 'POST', bearer: session.access_token }); } catch {}
       if (u) { jdel(`qbank.queue.${u}`); jdel(`qbank.profile.${u}`); jdel(`qbank.v1.${u}`); }
-      clearSession(); await cacheClear();
+      clearSession(); imageUrls.forEach(u => URL.revokeObjectURL(u)); imageUrls.clear(); await cacheClear();
     },
 
     async profile() {
@@ -214,6 +233,19 @@ const Cloud = (() => {
         throw e;
       }
     },
+    // Private pictures live in a private bucket; the database only releases one to someone who may see a question that uses it.
+    async image(path) {
+      if (imageUrls.has(path)) return imageUrls.get(path);
+      const key = 'img:' + path, hit = await cacheGet(key);
+      let blob = hit && hit.uid === uid() ? hit.blob : null;
+      if (!blob) {
+        blob = await blobApi('/storage/v1/object/authenticated/question-images/' + encodeURIComponent(path));
+        if (!/^image\/(png|jpeg|webp|gif)$/.test(blob.type)) throw new Error('Unsupported image');
+        await cacheSet(key, { uid: uid(), blob });
+      }
+      const url = URL.createObjectURL(blob); imageUrls.set(path, url); return url;
+    },
+    async prefetchImages(paths) { for (const p of [...new Set(paths)]) { try { await this.image(p); } catch { /* fetched later, or unavailable */ } } },
     rpc: (name, args = {}) => api(`/rest/v1/rpc/${name}`, { method: 'POST', body: args }),
 
     // hooks called by the Store

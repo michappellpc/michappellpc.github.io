@@ -55,7 +55,12 @@ for (const f of man.files) {
     if (!q.explanation || !String(q.explanation).trim()) err(id, 'missing explanation');
     if (!Array.isArray(q.references) || !q.references.length) warn(id, 'no references');
     if (q.image) {
-      if (!fs.existsSync(path.join(root, q.image))) err(id, `image file not found: ${q.image}`);
+      if (q.image.startsWith('private:')) {              // private picture: kept beside the questions, uploaded to the private bucket
+        const name = q.image.slice(8), file = path.join(dir, 'images', name);
+        if (!/^[a-z0-9][a-z0-9._-]*\.(png|jpe?g|webp|gif)$/.test(name)) err(id, `private image name "${name}" must be lower-case letters, digits, . _ - and end in .png .jpg .webp or .gif`);
+        else if (!fs.existsSync(file)) err(id, `private image not found: ${path.relative(process.cwd(), file)}`);
+        else { const kb = fs.statSync(file).size / 1024; if (kb > 2048) err(id, `image ${name} is ${Math.round(kb)} KB; keep pictures under 2 MB`); else if (kb > 600) warn(id, `image ${name} is ${Math.round(kb)} KB; smaller loads faster on phones`); }
+      } else if (!fs.existsSync(path.join(root, q.image))) err(id, `image file not found: ${q.image}`);
       if (!q.imageAlt) err(id, 'image needs imageAlt (a text description)');
     }
     bump(tally.status, q.status || '?'); (q.boards || []).forEach(b => bump(tally.board, b)); bump(tally.subject, q.subject);
