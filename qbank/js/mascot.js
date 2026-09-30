@@ -175,7 +175,7 @@ const Mascot = (() => {
       ${stars}${cl}${heli(4)}
       <span class="hills far">${toSvg(hills(120, 14, 1, 7, 'j'), 8, 'px')}</span>
       <span class="hills near">${toSvg(hills(120, 10, 4, 4, 'g'), 8, 'px')}</span>
-      <div class="scene-label">RAMQBANK <span>Aerospace &middot; Occupational &middot; Preventive</span></div>
+      <div class="scene-label">AEROMEDQBANK <span>Aerospace &middot; Occupational &middot; Preventive</span></div>
       <div class="scene-slot" id="scene-slot"></div></div>`;
   }
 

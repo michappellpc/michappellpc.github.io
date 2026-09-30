@@ -1,4 +1,4 @@
--- RAMQBank database. Run once in Supabase: SQL Editor -> New query -> paste this whole file -> Run.
+-- AeroMedQBank database. Run once in Supabase: SQL Editor -> New query -> paste this whole file -> Run.
 -- Safe to re-run: it only creates what is missing and replaces functions/policies.
 --
 -- The privacy model

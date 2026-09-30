@@ -1,6 +1,6 @@
 # Turning on private accounts
 
-This switches RAMQBank from "anyone with the link can use it" to **invitation-only, with a private question bank**:
+This switches AeroMedQBank from "anyone with the link can use it" to **invitation-only, with a private question bank**:
 
 - Only people whose email you approve can sign in.
 - The questions live in a private database. They are not in this public repository and are only sent to approved, signed-in people.

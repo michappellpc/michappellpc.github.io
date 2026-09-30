@@ -1,4 +1,4 @@
-# Adding questions to RAMQBank
+# Adding questions to AeroMedQBank
 
 ## Where the questions live
 

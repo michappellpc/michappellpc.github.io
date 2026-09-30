@@ -11,6 +11,7 @@ const fmt = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const boardName = id => (bank.boards.find(b => b.id === id) || {}).name || id;
 const isDraft = q => q.status !== 'reviewed';
+const mascotOn = () => !!Store.data.settings.mascot;
 const showDrafts = () => Store.data.settings.showDrafts !== false;
 const notesText = q => q.optionNotes ? '\n\nAnswer choices:\n' + q.options.filter(o => q.optionNotes[o.id]).map(o => esc(`${o.id}. ${q.optionNotes[o.id]}`)).join('\n') : '';
 const csvCell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -28,7 +29,7 @@ async function hydrateImages() {
   }
 }
 function labelScrolls() { $app.querySelectorAll('.scroll').forEach(b => { const h = b.closest('.card') && b.closest('.card').querySelector('h2,h3'); b.setAttribute('aria-label', (h ? h.textContent : 'Data') + ' table'); }); }
-function pageTitle(t) { const h = document.getElementById('page-title'); if (h) h.textContent = t; document.title = t + ' | RAMQBank'; }
+function pageTitle(t) { const h = document.getElementById('page-title'); if (h) h.textContent = t; document.title = t + ' | AeroMedQBank'; }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function applyTheme() {
@@ -141,11 +142,12 @@ function dashboard() {
   const hello = acc === null ? 'Reporting for duty, Doc! Ready for your first set of reps?'
     : (acc >= 80 ? 'Hooah! You\'re holding a strong average. Keep the pressure on.' : acc >= 60 ? 'Solid progress. Let\'s tighten up the weak spots.' : 'Tough terrain, but every question is a rep that counts.')
     + (missed ? ` You have ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
+  const headline = acc === null ? 'Start a test to build your performance profile.' : `${pct(c, c + w)}% correct across ${c + w} answers.` + (missed ? ` ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
   $app.innerHTML = `
-  ${Mascot.scene()}
+  ${mascotOn() ? Mascot.scene() : `<div class="pagehead"><div><h2 class="pagetitle">Dashboard</h2><p class="muted">${esc(headline)}</p></div><a class="btn primary" href="#/create">Create a new test</a></div>`}
   ${active ? `<div class="card row spread"><div><b>Test in progress</b> <span class="muted">(${Object.keys(active.answers).length}/${active.qids.length} answered)</span></div><a class="btn primary" href="#/test">Resume</a></div>` : ''}
   <div class="card rank">
-    <div class="row" style="gap:14px;flex-wrap:nowrap">${Mascot.insignia(rk.abbr, 5)}
+    <div class="row" style="gap:14px;flex-wrap:nowrap"><span class="rankbadge" aria-hidden="true">${esc(rk.abbr)}</span>
       <div style="flex:1;min-width:0"><div class="rank-title">${rk.name}</div>
         <div class="muted">${rk.next ? `${c} correct &middot; ${rk.next.at - c} more to make ${rk.next.name}` : `${c} correct &middot; Top rank. Keep training.`}</div>
         ${rk.next ? `<div class="bar" style="margin-top:6px"><i style="width:${pct(c - rk.at, rk.next.at - rk.at)}%"></i></div>` : ''}</div></div></div>
@@ -158,8 +160,8 @@ function dashboard() {
   <div class="card"><h2>Performance by subject</h2>
     ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th><span class="sr">Progress</span></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
-  <a class="btn primary" href="#/create">Create a new test</a>`;
-  Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 4 });
+  ${mascotOn() ? '<a class="btn primary" href="#/create">Create a new test</a>' : ''}`;
+  if (mascotOn()) Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 4 });
 }
 
 // ---------- create test ----------
@@ -255,7 +257,7 @@ function renderTest() {
       ? { pose: streak >= 3 ? 'cheer' : 'happy', msg: streak >= 3 ? `${streak} in a row! Squared away.` : Mascot.pick(L.correct, id) }
       : { pose: 'sad', msg: Mascot.pick(L.wrong, id) })
     : { pose: 'idle', msg: tutor || t.idx === 0 ? Mascot.pick(L.tips, id + t.idx) : '' };
-  Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 3 });
+  if (mascotOn()) Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 3 });
   bindTest(t, q); hydrateImages();
   if (refocus) { const f = $app.querySelector(`[data-opt="${refocus}"]`); if (f) f.focus(); refocus = null; }
 }
@@ -338,7 +340,7 @@ function results(id) {
     <div class="stat"><b>${r.mode}</b><span class="muted">Mode</span></div></div></div>
     <div class="card"><h3>By subject</h3><table><tbody>${Object.entries(by).map(([s, o]) => `<tr><td>${esc(s)}</td><td>${o.c}/${o.n}</td><td>${pct(o.c, o.n)}%</td></tr>`).join('')}</tbody></table></div>
     <a class="btn primary" href="#/review/${r.id}">Review questions</a> <a class="btn" href="#/create">New test</a>`;
-  Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding! That is board-ready work. Hooah!' } : p >= 60 ? { pose: 'happy', msg: 'Solid mission. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough exercise. Review makes it stick, and I\'m with you for the next rep.' });
+  if (mascotOn()) Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding! That is board-ready work. Hooah!' } : p >= 60 ? { pose: 'happy', msg: 'Solid mission. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough exercise. Review makes it stick, and I\'m with you for the next rep.' });
 }
 
 function review(id) {
@@ -373,7 +375,8 @@ function settings() {
   const th = Store.data.settings.theme;
   $app.innerHTML = `<div class="card"><h2>Settings</h2>
     <p><label for="theme">Theme</label> <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
-    <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label></div>
+    <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label>
+    <label class="chk"><input type="checkbox" id="mascot" ${mascotOn() ? 'checked' : ''}> Show the ram mascot and encouragement</label></div>
     ${Cloud.enabled ? `<div class="card"><h3>Account</h3>
       <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.role === 'reviewer' ? 'Reviewer' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
       <p class="muted" id="syncline"></p>
@@ -388,6 +391,7 @@ function settings() {
     : `<div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
       <div class="row"><button id="exp">Export progress</button><button id="imp">Import progress</button><input type="file" id="file" accept="application/json" hidden><button class="danger" id="reset">Reset all progress</button></div></div>`}`;
   document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.touchSettings(); };
+  document.getElementById('mascot').onchange = e => { Store.data.settings.mascot = e.target.checked; Store.save(); };
   document.getElementById('theme').onchange = e => { Store.data.settings.theme = e.target.value; Store.touchSettings(); applyTheme(); };
   if (!Cloud.enabled) {
     document.getElementById('exp').onclick = () => {
@@ -424,13 +428,12 @@ function lockUI(on) { document.body.classList.toggle('locked', on); if (on) { $t
 function renderSignIn(note = '') {
   pageTitle('Sign in');
   ready = false; lockUI(true);
-  $app.innerHTML = `<div class="card signin"><div id="si-mascot"></div><h2>Sign in</h2>${note ? `<p class="notice">${esc(note)}</p>` : ''}
+  $app.innerHTML = `<div class="card signin"><div class="signin-brand"><img class="logo" src="icons/logo.svg" alt="" width="44" height="44"><span class="wordmark big">AeroMed<b>QBank</b></span></div><h2>Sign in</h2>${note ? `<p class="notice">${esc(note)}</p>` : ''}
     <form id="si"><label for="si-email">Email</label><input id="si-email" type="email" autocomplete="username" required>
     <label for="si-pw">Password</label><input id="si-pw" type="password" autocomplete="current-password" required>
     <p class="notice" id="si-err" hidden></p>
     <div class="row"><button class="primary" type="submit" id="si-go">Sign in</button><button type="button" class="linkish" id="si-forgot">Forgot password?</button></div></form>
     <p class="muted">Access is by invitation. Ask your program lead if you need an account. By signing in you agree to the <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p></div>`;
-  Mascot.mount(document.getElementById('si-mascot'), { pose: 'idle', msg: 'Sign in to start training, Doc.', scale: 3 });
   const err = document.getElementById('si-err'), go = document.getElementById('si-go');
   const fail = m => { err.textContent = m; err.hidden = false; go.disabled = false; };
   document.getElementById('si').onsubmit = async e => {
