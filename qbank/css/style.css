@@ -326,3 +326,9 @@ a.statlink{text-decoration:none;color:inherit;display:block}a.statlink:hover{bor
 :root[data-theme=dark] .heatmap td.hi{background:#2b4a1a;color:#dff0cf}:root[data-theme=dark] .heatmap td.mid{background:#5a4610;color:#f6e6b5}:root[data-theme=dark] .heatmap td.lo{background:#5e2a1f;color:#f7d4ca}
 .heatmap tr.avgrow th,.heatmap tr.avgrow td{border-bottom:2px solid var(--line);font-weight:700}
 .heatmap thead th{font-size:.78rem;vertical-align:bottom}
+
+/* ---- Share of members who chose each option ---- */
+.opt{position:relative;overflow:hidden}
+.opt .pick{margin-left:auto;flex:none;font-size:.85rem;font-weight:600;color:var(--muted);padding-left:10px}
+.opt .pickbar{position:absolute;left:0;bottom:0;height:4px;background:var(--gold);opacity:.75;border-radius:0 2px 2px 0}
+.opt.correct .pickbar{background:var(--good)}.opt.wrong .pickbar{background:var(--bad)}

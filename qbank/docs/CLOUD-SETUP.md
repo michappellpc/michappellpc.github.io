@@ -28,7 +28,7 @@ You need: a computer, an email address for your Supabase account, and (for step 
 
 This is safe to run again later. It creates the tables, and the rules that make each person's data private.
 
-**Updating an existing project:** when a new version of the app adds features (for example the Questions editor, the reviewer role, hiding Draft questions from members, Lessons, group averages, and residency programs), paste the latest `schema.sql` and Run it once more. Nothing is lost. Until you do, the app keeps working for members, and the Questions page shows a "one more setup step" note.
+**Updating an existing project:** when a new version of the app adds features (for example the Questions editor, the reviewer role, hiding Draft questions from members, Lessons, group averages, answer-choice percentages, and residency programs), paste the latest `schema.sql` and Run it once more. Nothing is lost. Until you do, the app keeps working for members, and the Questions page shows a "one more setup step" note.
 
 ## 3. Approve people, starting with yourself
 

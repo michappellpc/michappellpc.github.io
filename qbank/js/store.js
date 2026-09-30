@@ -15,7 +15,7 @@ const Store = (() => {
     use(key) { KEY = key; d = load(); },
     forget(key) { try { localStorage.removeItem(key); } catch {} d = blank(); },
     qstat: id => d.q[id] || null,
-    record(id, ok) { const s = qs(id); s.seen++; ok ? s.correct++ : s.wrong++; s.last = ok ? 'c' : 'w'; save(); fire('attempt', id, ok); },
+    record(id, ok, chosen) { const s = qs(id); s.seen++; ok ? s.correct++ : s.wrong++; s.last = ok ? 'c' : 'w'; save(); fire('attempt', id, ok, chosen); },
     toggleFlag(id) { const s = qs(id); s.flagged = !s.flagged; save(); fire('mark', id); return s.flagged; },
     setNote(id, t) { qs(id).note = t; save(); fire('mark', id); },
     addTest(rec) { d.tests.unshift(rec); save(); fire('test', rec); },

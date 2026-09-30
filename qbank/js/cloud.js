@@ -95,8 +95,15 @@ const Cloud = (() => {
     let q = queue();
     if (q.reset) { await api('/rest/v1/rpc/reset_my_progress', { method: 'POST', body: {} }); q = queue(); q.reset = false; saveQueue(q); }
     while ((q = queue()).attempts.length) {
-      const batch = q.attempts.slice(0, 200);
-      await api('/rest/v1/attempts?on_conflict=user_id,client_id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: batch });
+      const batch = q.attempts.slice(0, 200), send = rows => api('/rest/v1/attempts?on_conflict=user_id,client_id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: rows });
+      if (noChosenColumn) await send(batch.map(({ chosen, ...rest }) => rest));
+      else {
+        try { await send(batch); }
+        catch (e) {                                                            // database not upgraded yet: send scores without the picked option
+          if (!(e.status === 400 && /chosen/i.test(e.message || ''))) throw e;
+          noChosenColumn = true; await send(batch.map(({ chosen, ...rest }) => rest));
+        }
+      }
       q = queue(); q.attempts = q.attempts.slice(batch.length); saveQueue(q);
     }
     q = queue();
@@ -163,6 +170,7 @@ const Cloud = (() => {
     if (typeof q.archived === 'boolean') row.archived = q.archived;
     return row;
   };
+  let noChosenColumn = false;
   const inList = ids => '(' + ids.map(i => '"' + String(i).replace(/"/g, '') + '"').join(',') + ')';
   // ---- lessons ----
   const toLesson = r => ({ id: r.id, status: r.status, reviewedBy: r.reviewed_by || undefined, boards: r.boards, subject: r.subject, title: r.title, summary: r.summary || '',
@@ -325,6 +333,16 @@ const Cloud = (() => {
         return {};                                                          // database not upgraded yet, or a hiccup: just show no averages
       }
     },
+    async peerChoices() {                                                     // { question_id: { total, counts: { A: n, B: n } } }
+      try {
+        const rows = await api('/rest/v1/rpc/peer_choices', { method: 'POST', body: {} }), m = {};
+        (rows || []).forEach(r => { const o = m[r.question_id] ||= { total: r.total, counts: {} }; o.counts[r.chosen] = r.picks; });
+        await cacheSet('choices', { uid: uid(), at: Date.now(), m }); return m;
+      } catch (e) {
+        if (e.offline) { const x = await cacheGet('choices'); return x && x.uid === uid() ? x.m : {}; }
+        return {};
+      }
+    },
     async peerMin() { const r = await api('/rest/v1/rpc/peer_min_users', { method: 'POST', body: {} }); return typeof r === 'number' ? r : 10; },
     async setPeerMin(n) { await api('/rest/v1/rpc/set_peer_min_users', { method: 'POST', body: { n } }); },
     // ---- lessons (members read reviewed ones; editors read and write all) ----
@@ -370,7 +388,7 @@ const Cloud = (() => {
     rpc: (name, args = {}) => api(`/rest/v1/rpc/${name}`, { method: 'POST', body: args }),
 
     // hooks called by the Store
-    queueAttempt(question_id, ok) { change(q => q.attempts.push({ question_id, ok, client_id: cid(), at: new Date().toISOString() })); },
+    queueAttempt(question_id, ok, chosen) { change(q => q.attempts.push({ question_id, ok, ...(chosen ? { chosen: String(chosen).slice(0, 3) } : {}), client_id: cid(), at: new Date().toISOString() })); },
     queueMark(question_id) { change(q => { const s = Store.qstat(question_id) || {}; q.marks[question_id] = { flagged: !!s.flagged, note: s.note || '', updated_at: new Date().toISOString() }; }); },
     queueTest(rec) { change(q => { q.tests[rec.id] = rec; }); },
     queueSettings() { change(q => { const s = Store.data.settings; q.settings = { data: { theme: s.theme, showDrafts: s.showDrafts !== false }, updated_at: new Date().toISOString() }; }); },

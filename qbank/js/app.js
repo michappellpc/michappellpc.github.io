@@ -1,6 +1,6 @@
 'use strict';
 const $app = document.getElementById('app'), $timer = document.getElementById('timer');
-let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {}, lessons: [], lessonFiles: [], peer: {}, program: null };
+let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {}, lessons: [], lessonFiles: [], peer: {}, choices: {}, program: null };
 const APP_VERSION = '1.3';
 let tick = null, ready = false, profile = null, refocus = null;
 
@@ -12,8 +12,14 @@ const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { c
 const boardName = id => (bank.boards.find(b => b.id === id) || {}).name || id;
 const isDraft = q => q.status !== 'reviewed';
 const peerLine = id => { const p = bank.peer && bank.peer[id]; return p ? `<span class="peer"><b>${p.pct}%</b> of members answered this correctly on their first try (${p.users} members)</span>` : ''; };
+// The share of members who picked an option, shown after answering once enough members have a recorded first pick.
+const pickBadge = (qid, optId) => {
+  const c = bank.choices && bank.choices[qid]; if (!c || !c.total) return '';
+  const n = Math.round(100 * (c.counts[optId] || 0) / c.total);
+  return `<span class="pick"><span class="sr">${n}% of members chose this answer</span><span aria-hidden="true">${n}%</span></span><i class="pickbar" aria-hidden="true" style="width:${n}%"></i>`;
+};
 let peerAt = 0;
-function refreshPeer() { if (!Cloud.enabled || Date.now() - peerAt < 300000) return; peerAt = Date.now(); Cloud.peerStats().then(m => { bank.peer = m; }); }
+function refreshPeer() { if (!Cloud.enabled || Date.now() - peerAt < 300000) return; peerAt = Date.now(); Cloud.peerStats().then(m => { bank.peer = m; }); Cloud.peerChoices().then(m => { bank.choices = m; }); }
 const mascotOn = () => Store.data.settings.mascot !== false;
 const showDrafts = () => Store.data.settings.showDrafts !== false;
 const notesText = q => q.optionNotes ? '\n\nAnswer choices:\n' + q.options.filter(o => q.optionNotes[o.id]).map(o => esc(`${o.id}. ${q.optionNotes[o.id]}`)).join('\n') : '';
@@ -259,7 +265,7 @@ function renderTest() {
       let c = 'opt'; if (sel === o.id) c += ' sel'; if (struck.includes(o.id)) c += ' struck';
       if (shown) { if (o.id === q.answer) c += ' correct'; else if (sel === o.id) c += ' wrong'; }
       const tab = locked0 ? -1 : (sel ? (sel === o.id ? 0 : -1) : (o === q.options[0] ? 0 : -1));
-      return `<div class="optrow"><div class="${c}" data-opt="${esc(o.id)}" role="radio" aria-checked="${sel === o.id}" ${locked0 ? 'aria-disabled="true"' : ''} tabindex="${tab}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}${struck.includes(o.id) ? '<span class="sr"> (crossed out)</span>' : ''}${shown && o.id === q.answer ? '<span class="sr"> (correct answer)</span>' : ''}</span></div>
+      return `<div class="optrow"><div class="${c}" data-opt="${esc(o.id)}" role="radio" aria-checked="${sel === o.id}" ${locked0 ? 'aria-disabled="true"' : ''} tabindex="${tab}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}${struck.includes(o.id) ? '<span class="sr"> (crossed out)</span>' : ''}${shown && o.id === q.answer ? '<span class="sr"> (correct answer)</span>' : ''}</span>${shown ? pickBadge(id, o.id) : ''}</div>
         ${shown ? '' : `<button class="x" data-strike="${esc(o.id)}" aria-pressed="${struck.includes(o.id)}" aria-label="Cross out choice ${esc(o.id)}" title="Cross out">✕</button>`}</div>`;
     }).join('')}</div>
     ${shown ? `<div class="expl"><b>${sel === q.answer ? 'Correct' : 'Incorrect'}.</b> Correct answer: ${esc(q.answer)}.${peerLine(id) ? '\n' + peerLine(id) : ''}\n\n${esc(q.explanation)}${notesText(q)}${q.references && q.references.length ? `\n\n<span class="muted">References: ${q.references.map(esc).join('; ')}</span>` : ''}</div>` : ''}
@@ -324,7 +330,7 @@ function bindTest(t, q) {
   document.getElementById('note').onchange = e => Store.setNote(id, e.target.value);
   function submit() {
     if (!t.answers[id] || t.revealed[id]) return;
-    t.revealed[id] = true; Store.record(id, t.answers[id] === q.answer); persist(t); renderTest();
+    t.revealed[id] = true; Store.record(id, t.answers[id] === q.answer, t.answers[id]); persist(t); renderTest();
   }
   document.onkeydown = e => {
     if (location.hash !== '#/test' || /TEXTAREA|INPUT|SELECT/.test(e.target.tagName) || document.querySelector('.modal')) return;
@@ -347,7 +353,7 @@ function finish() {
   t.qids.forEach(qid => {
     const q = bank.byId[qid], ok = t.answers[qid] === q.answer;
     if (ok) c++;
-    if (!(t.mode === 'tutor' && t.revealed[qid]) && t.answers[qid]) Store.record(qid, ok); // not yet recorded
+    if (!(t.mode === 'tutor' && t.revealed[qid]) && t.answers[qid]) Store.record(qid, ok, t.answers[qid]); // not yet recorded
   });
   const rec = { id: t.id, date: Date.now(), mode: t.mode, qids: t.qids, answers: t.answers, correct: c, total: t.qids.length, seconds: Math.round(elapsed(t)) };
   Store.data.active = null; Store.addTest(rec);
@@ -382,7 +388,7 @@ function review(id) {
     const mine = r.answers[qid], ok = mine === q.answer;
     return `<div class="card"><div class="muted">${i + 1}. ${esc(q.subject)} · ${esc(q.topic || '')} — <b style="color:var(--${ok ? 'good' : 'bad'})">${ok ? 'Correct' : mine ? 'Incorrect' : 'Unanswered'}</b></div>
       <p class="stem">${esc(q.stem)}</p>
-      ${q.options.map(o => `<div class="opt ${o.id === q.answer ? 'correct' : o.id === mine ? 'wrong' : ''}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}</span></div>`).join('')}
+      ${q.options.map(o => `<div class="opt ${o.id === q.answer ? 'correct' : o.id === mine ? 'wrong' : ''}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}</span>${pickBadge(qid, o.id)}</div>`).join('')}
       ${imgTag(q)}
       <div class="expl">${peerLine(qid) ? peerLine(qid) + '\n\n' : ''}${esc(q.explanation)}${notesText(q)}</div>
       <div class="row" style="margin-top:10px"><button data-fb="${esc(qid)}" title="Report a problem or suggest a change to this question">✎ Feedback</button></div></div>`;
@@ -554,7 +560,7 @@ async function startSession() {
     if (!profile || !profile.active) return renderBlocked(Cloud.session.email);
     setQuestions(await Cloud.questions());
     bank.lessons = await Cloud.lessons().catch(() => []);
-    bank.peer = await Cloud.peerStats(); peerAt = Date.now();
+    bank.peer = await Cloud.peerStats(); bank.choices = await Cloud.peerChoices(); peerAt = Date.now();
     bank.program = await Cloud.myProgram();
     Cloud.prefetchImages(bank.questions.filter(privImg).map(privImg));   // in the background, so pictures also work offline
   } catch (e) {
@@ -563,7 +569,7 @@ async function startSession() {
     document.getElementById('retry').onclick = () => startSession(); document.getElementById('bo').onclick = () => signOut();
     return;
   }
-  Store.hooks.attempt = (id, ok) => Cloud.queueAttempt(id, ok);
+  Store.hooks.attempt = (id, ok, chosen) => Cloud.queueAttempt(id, ok, chosen);
   Store.hooks.mark = id => Cloud.queueMark(id);
   Store.hooks.test = rec => Cloud.queueTest(rec);
   Store.hooks.settings = () => Cloud.queueSettings();
