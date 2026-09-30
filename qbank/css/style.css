@@ -314,3 +314,7 @@ a.subjtile:hover{border-color:var(--accent);background:var(--sel)}.subjtile span
 .lessonedit{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
 .lpreview{border:1px solid var(--line);border-radius:8px;padding:6px 16px 12px;background:var(--card);max-height:78vh;overflow:auto}
 @media(max-width:1100px){.lessonedit{grid-template-columns:1fr}}
+
+/* ---- Group averages, flagged ---- */
+.peer{display:inline-block;margin:6px 0 2px;padding:3px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:.88rem}
+a.statlink{text-decoration:none;color:inherit;display:block}a.statlink:hover{border-color:var(--accent);background:var(--sel)}
