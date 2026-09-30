@@ -63,13 +63,19 @@ function dashboard() {
       <td style="width:22%"><div class="bar"><i style="width:${pct(cc, cc + ww)}%"></i></div></td></tr>`);
   }
   const active = Store.data.active;
+  const rk = Mascot.rankFor(c);
   const acc = c + w ? pct(c, c + w) : null, missed = all.filter(s => s.last === 'w').length;
-  const hello = acc === null ? 'Welcome aboard, Doc! Ready for your first flight?'
-    : (acc >= 80 ? 'Cruising altitude. Keep it up!' : acc >= 60 ? 'Solid progress. Let\'s patch the weak spots.' : 'A little rough air, but every question counts.')
+  const hello = acc === null ? 'Reporting for duty, Doc! Ready for your first set of reps?'
+    : (acc >= 80 ? 'Hooah! You\'re holding a strong average. Keep the pressure on.' : acc >= 60 ? 'Solid progress. Let\'s tighten up the weak spots.' : 'Tough terrain, but every question is a rep that counts.')
     + (missed ? ` You have ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
   $app.innerHTML = `
   ${Mascot.scene()}
   ${active ? `<div class="card row spread"><div><b>Test in progress</b> <span class="muted">(${Object.keys(active.answers).length}/${active.qids.length} answered)</span></div><a class="btn primary" href="#/test">Resume</a></div>` : ''}
+  <div class="card rank">
+    <div class="row" style="gap:14px;flex-wrap:nowrap">${Mascot.insignia(rk.abbr, 5)}
+      <div style="flex:1;min-width:0"><div class="rank-title">${rk.name}</div>
+        <div class="muted">${rk.next ? `${c} correct &middot; ${rk.next.at - c} more to make ${rk.next.name}` : `${c} correct &middot; Top rank. Keep training.`}</div>
+        ${rk.next ? `<div class="bar" style="margin-top:6px"><i style="width:${pct(c - rk.at, rk.next.at - rk.at)}%"></i></div>` : ''}</div></div></div>
   <div class="grid">
     <div class="card stat"><b>${bank.questions.length}</b><span class="muted">Questions in bank</span></div>
     <div class="card stat"><b>${used}</b><span class="muted">Used (${pct(used, bank.questions.length)}%)</span></div>
@@ -80,7 +86,7 @@ function dashboard() {
     ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
   <a class="btn primary" href="#/create">Create a new test</a>`;
-  Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 5 });
+  Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 4 });
 }
 
 // ---------- create test ----------
@@ -167,10 +173,10 @@ function renderTest() {
   const L = Mascot.lines;
   const coach = shown
     ? (sel === q.answer
-      ? { pose: streak >= 3 ? 'cheer' : 'happy', msg: streak >= 3 ? `${streak} in a row! You\'re on fire.` : Mascot.pick(L.correct, id) }
+      ? { pose: streak >= 3 ? 'cheer' : 'happy', msg: streak >= 3 ? `${streak} in a row! Squared away.` : Mascot.pick(L.correct, id) }
       : { pose: 'sad', msg: Mascot.pick(L.wrong, id) })
     : { pose: 'idle', msg: tutor || t.idx === 0 ? Mascot.pick(L.tips, id + t.idx) : '' };
-  Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 4 });
+  Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 3 });
   bindTest(t, q);
 }
 
@@ -241,7 +247,7 @@ function results(id) {
     <div class="stat"><b>${r.mode}</b><span class="muted">Mode</span></div></div></div>
     <div class="card"><h3>By subject</h3><table><tbody>${Object.entries(by).map(([s, o]) => `<tr><td>${esc(s)}</td><td>${o.c}/${o.n}</td><td>${pct(o.c, o.n)}%</td></tr>`).join('')}</tbody></table></div>
     <a class="btn primary" href="#/review/${r.id}">Review questions</a> <a class="btn" href="#/create">New test</a>`;
-  Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding flight! That is board-ready work.' } : p >= 60 ? { pose: 'happy', msg: 'Solid flight. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough landing. Review makes it stick, and I\'m here for the next one.' });
+  Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding! That is board-ready work. Hooah!' } : p >= 60 ? { pose: 'happy', msg: 'Solid mission. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough exercise. Review makes it stick, and I\'m with you for the next rep.' });
 }
 
 function review(id) {

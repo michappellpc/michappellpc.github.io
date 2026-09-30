@@ -1,15 +1,16 @@
-// Pixel-art mascot "Pulse": a fluffy aviator ram with curled horns, goggles, and a red cross badge.
-// Shapes are rasterized from ellipses with light/shadow bands, then outlined, so every pose shares one clean style.
+// Pixel-art mascot "Pulse": an Army medic ram with spiral horns, a camo helmet, a red cross and a dog tag.
+// Shapes are rasterized from ellipses and curves with light/shadow bands, then outlined, so every pose shares one style.
 const Mascot = (() => {
-  const N = 32;
+  const N = 40;
   const PAL = {
-    W: '#ffffff', C: '#fbf3e4', V: '#d6cce6',              // wool: light, base, shadow
-    T: '#e6b88a', t: '#c99566', a: '#a9784c',              // face: base, chin shadow, rim
-    Z: '#f7e0c2', n: '#e8808f', p: '#f3a9b4',              // muzzle, nose, inner ear / cheeks
-    H: '#efc65c', h: '#b98620', X: '#4a382a',              // horn, horn shadow, hoof
-    E: '#ffffff', D: '#1b2a41', o: '#1b2a41',              // eye white, pupil/lines, outline
-    G: '#a6ecff', Y: '#e8b23a', S: '#7a4a2a',              // goggle glass, frame, strap
-    r: '#e04b4b', M: '#8a2d3a', y: '#ffd23f', b: '#7cc4ff'
+    W: '#ffffff', C: '#f7f0e0', V: '#d3c8e0',              // wool: light, base, shadow
+    T: '#ecd0a8', t: '#cfa574', a: '#a57a4d',              // face: base, shadow, rim
+    Z: '#f8e6cc', n: '#7a4a4a', p: '#f0a0ad',              // muzzle, nostril, pink
+    H: '#e0bf78', J: '#f3d99a', h: '#9b7128',              // horn: base, light, dark
+    E: '#ffffff', D: '#1b2a41', o: '#151a10',              // eye white, pupil/lines, outline
+    '1': '#b9a67a', '2': '#6b7a45', '3': '#5a4a32', '4': '#3e4a2b', Q: '#262c17', // camo + helmet rim
+    r: '#d83b3b', w: '#ffffff', y: '#ffd23f', b: '#7cc4ff', M: '#7a2a35', s: '#d5d9dc', S: '#8b9096',
+    x: '#3a4429', G: '#9be7ff'
   };
   const blank = () => Array.from({ length: N }, () => Array(N).fill('.'));
   const put = (g, x, y, ch) => { if (x >= 0 && x < N && y >= 0 && y < N) g[y][x] = ch; };
@@ -32,71 +33,74 @@ const Mascot = (() => {
   }
   const sparkle = (g, x, y) => line(g, [[x, y], [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]], 'y');
 
-  // fluffy wool silhouette: a core ellipse plus a ring of bumps
-  const BUMPS = Array.from({ length: 12 }, (_, i) => [16 + 10.2 * Math.cos(i * Math.PI / 6), 17.5 + 9.2 * Math.sin(i * Math.PI / 6)]);
+  // fluffy wool: a core ellipse plus a ring of bumps
+  const BUMPS = Array.from({ length: 14 }, (_, i) => [20 + 13 * Math.cos(i * Math.PI / 7), 25.5 + 9.6 * Math.sin(i * Math.PI / 7)]);
   const inWool = (x, y, grow) => {
     const px = x + .5, py = y + .5;
-    return ((px - 16) / (10 + grow)) ** 2 + ((py - 17.5) / (9.2 + grow)) ** 2 <= 1 || BUMPS.some(([bx, by]) => (px - bx) ** 2 + (py - by) ** 2 <= (3.3 + grow) ** 2);
+    return ((px - 20) / (13 + grow)) ** 2 + ((py - 25.5) / (9.6 + grow)) ** 2 <= 1 || BUMPS.some(([bx, by]) => (px - bx) ** 2 + (py - by) ** 2 <= (3.7 + grow) ** 2);
   };
   function wool(g) {
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inWool(x, y, 1)) g[y][x] = 'o';
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inWool(x, y, 0)) g[y][x] = woolShade((x + .5 - 16) / 13, (y + .5 - 17.5) / 12);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inWool(x, y, 0)) g[y][x] = woolShade((x + .5 - 20) / 16, (y + .5 - 25.5) / 13);
   }
-  // curled horn: a ring with a notch, so it reads as a spiral
+  // big spiral horn that sweeps out from under the helmet and curls around the ear
   function horn(g, flip) {
-    const cx = flip ? N - 6.6 : 6.6, cy = 14.2;
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const dx = x + .5 - cx, dy = y + .5 - cy, d = Math.hypot(dx, dy);
-      const ang = Math.atan2(dy, flip ? -dx : dx) * 180 / Math.PI;
-      const notch = ang > -85 && ang < -20;
-      if (d <= 5.8 && d >= 1.2 && !(notch && d > 2.6)) g[y][x] = 'h';
+    const pts = [];
+    for (let i = 0; i <= 100; i++) {
+      const t = i / 100, ang = (-55 - 295 * t) * Math.PI / 180, r = 8.4 - 5.4 * t;
+      const x = 10.8 + r * Math.cos(ang), y = 17 + r * Math.sin(ang);
+      pts.push([flip ? N - x : x, y, 2.8 - 1.2 * t, i]);
     }
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const dx = x + .5 - cx, dy = y + .5 - cy, d = Math.hypot(dx, dy);
-      const ang = Math.atan2(dy, flip ? -dx : dx) * 180 / Math.PI;
-      const notch = ang > -85 && ang < -20;
-      if (d <= 5 && d >= 2.6 && !notch) g[y][x] = d >= 3.5 && d <= 4.2 ? 'h' : 'H';
-      if (d <= 1.4) g[y][x] = 'H';
-    }
+    const disc = (cx, cy, rad, ch) => { for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if ((x + .5 - cx) ** 2 + (y + .5 - cy) ** 2 <= rad * rad) g[y][x] = ch; };
+    pts.forEach(([x, y, w]) => disc(x, y, w + .9, 'h'));
+    pts.forEach(([x, y, w, i]) => disc(x, y, w, Math.floor(i / 7) % 2 ? 'H' : 'J'));
   }
+  // camouflage pattern for the helmet
+  const camo = (x, y) => {
+    const v = Math.sin(x * .9 + y * .4) + Math.sin(x * .35 - y * .85 + 1.3) + Math.sin(x * .6 + y * 1.3 + 2.1);
+    return v < -1.2 ? '4' : v < -.2 ? '3' : v < .8 ? '2' : '1';
+  };
 
   function pose(name) {
     const g = blank();
     const up = name === 'cheer' || name === 'happy';
     wool(g);
     horn(g, false); horn(g, true);
-    // ears
-    [[6.8, 20.2], [N - 6.8, 20.2]].forEach(([ex, ey]) => { ell(g, ex, ey, 3.7, 2.2, () => 'a'); ell(g, ex, ey, 3.2, 1.7, () => 'T'); });
-    put(g, 5, 20, 'p'); put(g, 6, 20, 'p'); put(g, N - 6, 20, 'p'); put(g, N - 7, 20, 'p');
-    // face and muzzle
-    ell(g, 16, 20, 8.8, 8.2, () => 'a');
-    ell(g, 16, 20, 8, 7.4, (dx, dy) => (dy > .55 ? 't' : 'T'));
-    ell(g, 16, 25, 5, 3.4, () => 'Z');
-    line(g, [[14, 22], [15, 22], [16, 22], [17, 22], [15, 23], [16, 23]], 'n');
+    // ears, tucked under the horns
+    [[11, 24.6], [N - 11, 24.6]].forEach(([ex, ey]) => { ell(g, ex, ey, 3.4, 1.9, () => 'a'); ell(g, ex, ey, 2.8, 1.4, () => 'T'); });
+    put(g, 9, 25, 'p'); put(g, 10, 25, 'p'); put(g, N - 10, 25, 'p'); put(g, N - 11, 25, 'p');
+    // long ram face and muzzle
+    ell(g, 20, 19.4, 8, 10, () => 'a');
+    ell(g, 20, 19.4, 7.2, 9.2, (dx, dy) => (dy > .6 ? 't' : 'T'));
+    ell(g, 20, 25.6, 4.9, 3.6, () => 'Z');
+    ell(g, 20, 23.4, 2.7, 1.5, () => 'p');
+    line(g, [[18, 23], [21, 23]], 'n');
+    // red cross patch is on the helmet; dog tag hangs on the wool
+    line(g, [[16, 29], [17, 30], [18, 31]], 'S'); line(g, [[23, 29], [22, 30], [21, 31]], 'S');
+    for (let y = 31; y <= 36; y++) for (let x = 18; x <= 21; x++) g[y][x] = 'D';
+    for (let y = 32; y <= 35; y++) for (let x = 19; x <= 20; x++) g[y][x] = 's';
+    put(g, 19, 32, 'W'); put(g, 20, 35, 'S');
     // eyes
-    const eyeX = [12, 20];
-    if (name === 'idle' || name === 'sad' || name === 'cheer-open') {
-      eyeX.forEach(cx => { ell(g, cx, 18.6, 3.1, 3.5, () => 'D'); ell(g, cx, 18.6, 2.5, 2.9, () => 'E'); });
-      const py = name === 'sad' ? 19.6 : 18.8;
-      eyeX.forEach(cx => { ell(g, cx, py, 1.6, 2.1, () => 'D'); put(g, Math.round(cx - .9), Math.round(py - 1.3), 'E'); });
+    const eyeX = [16.4, 23.6];
+    if (name === 'idle' || name === 'sad') {
+      const py = name === 'sad' ? 20.6 : 19.8;
+      eyeX.forEach(cx => { ell(g, cx, py, 1.8, 2.5, () => 'D'); put(g, Math.round(cx - .8), Math.round(py - 1.4), 'E'); put(g, Math.round(cx - .8), Math.round(py - .4), 'E'); });
     }
-    if (name === 'blink') both(g, [[10, 19], [11, 19], [12, 19], [13, 19]], 'D');
-    if (up) both(g, [[10, 19], [11, 18], [12, 17], [13, 18], [13, 19]], 'D');
-    if (name === 'sad') { both(g, [[9, 15], [10, 15], [11, 14], [12, 14], [13, 13], [14, 13]], 'D'); both(g, [[9, 21], [9, 22]], 'b'); }
-    // cheeks
-    both(g, [[8, 23], [9, 23]], 'p');
+    if (name === 'blink') both(g, [[14, 20], [15, 20], [16, 20], [17, 20], [18, 20]], 'D');
+    if (up) both(g, [[14, 21], [15, 20], [16, 19], [17, 20], [18, 21]], 'D');
+    if (name === 'sad') { both(g, [[13, 15], [14, 15], [15, 14], [16, 14], [17, 13], [18, 13]], 'D'); both(g, [[13, 23], [13, 24]], 'b'); }
+    both(g, [[14, 24], [13, 24]], 'p'); // cheeks
     // mouth
-    if (up) { line(g, [[14, 25], [15, 25], [16, 25], [17, 25], [14, 26], [15, 26], [16, 26], [17, 26]], 'M'); line(g, [[15, 26], [16, 26]], 'p'); }
-    else if (name === 'sad') line(g, [[14, 26], [15, 25], [16, 25], [17, 26]], 'D');
-    else line(g, [[14, 25], [15, 26], [16, 26], [17, 25]], 'D');
-    // red cross badge on the wool
-    line(g, [[8, 26], [7, 27], [8, 27], [9, 27], [8, 28]], 'r');
-    // aviator goggles on the forehead
-    line(g, [[11, 12], [12, 12], [13, 12], [14, 12], [15, 12], [16, 12], [17, 12], [18, 12], [19, 12], [20, 12]], 'S');
-    [[13, 11], [19, 11]].forEach(([cx, cy]) => { ell(g, cx, cy, 3, 2.5, () => 'Y'); ell(g, cx, cy, 2.1, 1.7, () => 'G'); });
-    put(g, 12, 10, 'E'); put(g, 18, 10, 'E');
+    if (up) { line(g, [[18, 26], [19, 26], [20, 26], [21, 26], [18, 27], [19, 27], [20, 27], [21, 27]], 'M'); line(g, [[19, 27], [20, 27]], 'p'); }
+    else if (name === 'sad') line(g, [[17, 27], [22, 27], [18, 26], [21, 26], [19, 26], [20, 26]], 'D');
+    else line(g, [[17, 26], [22, 26], [18, 27], [21, 27], [19, 27], [20, 27]], 'D');
+    // camo combat helmet with a medic red cross
+    for (let y = 0; y <= 14; y++) for (let x = 0; x < N; x++) if (((x + .5 - 20) / 10.6) ** 2 + ((y + .5 - 10.6) / 7.6) ** 2 <= 1) g[y][x] = y >= 14 ? 'Q' : camo(x, y);
+    for (let x = 9; x <= 30; x++) put(g, x, 14, 'Q');
+    ell(g, 20, 9.6, 3.6, 3.6, () => 'w');
+    line(g, [[19, 7], [20, 7], [19, 8], [20, 8], [19, 9], [20, 9], [19, 10], [20, 10], [19, 11], [20, 11], [17, 9], [18, 9], [21, 9], [22, 9], [17, 10], [18, 10], [21, 10], [22, 10]], 'r');
     outline(g);
-    if (name === 'cheer') { sparkle(g, 2, 3); sparkle(g, 29, 2); put(g, 1, 8, 'y'); put(g, 30, 9, 'y'); }
+    if (name === 'cheer') { sparkle(g, 4, 5); sparkle(g, 35, 4); put(g, 2, 12, 'y'); put(g, 37, 11, 'y'); }
     return g;
   }
 
@@ -138,20 +142,60 @@ const Mascot = (() => {
     }
     return g;
   }
-  const birds = ['o...o', '.o.o.', '..o..'].map(r => r.split(''));
+  // Black Hawk-style helicopter (side view, facing right); two rotor frames alternate
+  function heliGrid(frame) {
+    const g = Array.from({ length: 12 }, () => Array(30).fill('.'));
+    const P = (x, y, ch) => { if (g[y]) g[y][x] = ch; };
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 30; x++) {
+      if (((x + .5 - 13) / 8.2) ** 2 + ((y + .5 - 6) / 3.4) ** 2 <= 1) P(x, y, 'x');
+    }
+    for (let x = 19; x <= 28; x++) { P(x, 5, 'x'); P(x, 6, 'x'); }
+    [[27, 2], [28, 2], [27, 3], [28, 3], [28, 4], [27, 4], [26, 4]].forEach(([x, y]) => P(x, y, 'x'));
+    ell9(g, 17.5, 5.4, 2.6, 2, 'G');
+    for (let x = 8; x <= 17; x++) P(x, 10, 'x'); P(9, 9, 'x'); P(16, 9, 'x');
+    P(13, 3, 'x'); P(13, 2, 'x');
+    const span = frame ? [3, 24] : [6, 21];
+    for (let x = span[0]; x <= span[1]; x++) P(x, 1, 'S');
+    for (let x = 22; x <= 24; x++) P(x, frame ? 3 : 4, 'S');
+    return g;
+  }
+  function ell9(g, cx, cy, rx, ry, ch) { for (let y = 0; y < g.length; y++) for (let x = 0; x < g[0].length; x++) if (((x + .5 - cx) / rx) ** 2 + ((y + .5 - cy) / ry) ** 2 <= 1) g[y][x] = ch; }
+  const heli = px => { const f = i => toSvg(heliGrid(i), px, 'px'); return `<span class="heli"><span class="hf a">${f(0)}</span><span class="hf b">${f(1)}</span></span>`; };
 
   function scene() {
     const cl = [[8, 24, 34, 5, 1], [34, 46, 46, 4, 0], [58, 18, 40, 5, 1], [80, 52, 52, 4, 0]].map(([l, t, d, px, s]) =>
       `<span class="cloud" style="left:${l}%;top:${t}px;animation-duration:${d}s">${toSvg(cloudGrid(s ? 16 : 12, s ? 9 : 8, s), px, 'px')}</span>`).join('');
     const stars = [[12, 14], [33, 42], [47, 10], [64, 30], [83, 16], [93, 52]].map(([l, t]) =>
       `<span class="star" style="left:${l}%;top:${t}px">${toSvg([['.', 'y', '.'], ['y', 'y', 'y'], ['.', 'y', '.']], 3, 'px')}</span>`).join('');
-    const bird = (l, t, d, dl) => `<span class="bird" style="top:${t}px;animation-duration:${d}s;animation-delay:${dl}s">${toSvg(birds, 4, 'px')}</span>`;
     return `<div class="scene">
       <span class="sun"><span class="sun-day">${toSvg(disc(9, 'sun'), 5, 'px')}</span><span class="sun-night">${toSvg(disc(8, 'moon'), 5, 'px')}</span></span>
-      ${stars}${cl}${bird(0, 34, 22, 0)}${bird(0, 58, 28, 6)}
+      ${stars}${cl}${heli(4)}
       <span class="hills far">${toSvg(hills(120, 14, 1, 7, 'j'), 8, 'px')}</span>
       <span class="hills near">${toSvg(hills(120, 10, 4, 4, 'g'), 8, 'px')}</span>
+      <div class="scene-label">RAM QBANK <span>Aerospace &middot; Occupational &middot; Preventive</span></div>
       <div class="scene-slot" id="scene-slot"></div></div>`;
+  }
+
+  // Rank insignia (simplified, generic pixel versions) shown on the dashboard
+  const RANKS = [
+    { at: 0, abbr: '2LT', name: 'Second Lieutenant' }, { at: 25, abbr: '1LT', name: 'First Lieutenant' },
+    { at: 75, abbr: 'CPT', name: 'Captain' }, { at: 200, abbr: 'MAJ', name: 'Major' },
+    { at: 500, abbr: 'LTC', name: 'Lieutenant Colonel' }, { at: 1000, abbr: 'COL', name: 'Colonel' }
+  ];
+  const rankFor = n => { let i = 0; RANKS.forEach((r, k) => { if (n >= r.at) i = k; }); return { ...RANKS[i], next: RANKS[i + 1] || null }; };
+  function insignia(abbr, px = 4) {
+    const bar = c => Array.from({ length: 3 }, () => Array.from('cccccccc'.replace(/c/g, c)));
+    const leaf = c => { const g = Array.from({ length: 9 }, () => Array(9).fill('.')); ell9(g, 4.5, 4.5, 3.4, 4.4, c); for (let y = 1; y < 8; y++) g[y][4] = 'S'; return g; };
+    const star = c => ['....c....', '....c....', '...ccc...', 'ccccccccc', '.ccccccc.', '..ccccc..', '..cc.cc..', '.cc...cc.'].map(r => Array.from(r.replace(/c/g, c)));
+    const bars = (n, c) => { const rows = []; for (let i = 0; i < n; i++) { if (i) rows.push(Array(8).fill('.')); rows.push(...bar(c)); } return rows; };
+    const g = { '2LT': () => bars(1, 'y'), '1LT': () => bars(1, 's'), CPT: () => bars(2, 's'), MAJ: () => leaf('y'), LTC: () => leaf('s'), COL: () => star('s') }[abbr]();
+    const w = g[0].length, pad = g.map(r => ['.', ...r, '.']); pad.unshift(Array(w + 2).fill('.')); pad.push(Array(w + 2).fill('.'));
+    return toSvg(border(pad), px, 'insignia');
+  }
+  function border(g) {
+    const h = g.length, w = g[0].length, out = g.map(r => r.slice());
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (g[y][x] === '.' && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => g[y + dy] && g[y + dy][x + dx] && g[y + dy][x + dx] !== '.' && g[y + dy][x + dx] !== 'o')) out[y][x] = 'o';
+    return out;
   }
 
   // ---- behavior ----
@@ -173,9 +217,9 @@ const Mascot = (() => {
   }
 
   const lines = {
-    correct: ['Nailed it!', 'Cleared for takeoff!', 'Smooth landing!', 'Textbook answer, Doc.', 'Right on the glide path.', 'Ram-tastic!'],
-    wrong: ['Turbulence. Read the explanation and we\'ll nail the next one.', 'Every miss is a study note.', 'Shake it off. The next one is yours.', 'Better to learn it here than on boards day.'],
-    tips: ['Cross out what you can rule out.', 'Don\'t be sheepish. Trust your first read.', 'Breathe. You\'ve got this.', 'Read the last line of the stem twice.', 'Eliminate, then decide.']
+    correct: ['Hooah!', 'On target.', 'Mission accomplished, Doc.', 'Roger that, correct!', 'Ram strong!', 'Squared away.'],
+    wrong: ['Negative. Read the explanation, then regroup.', 'Regroup and re-engage. The next one is yours.', 'Every miss is intel for the next one.', 'Better to learn it here than on boards day.'],
+    tips: ['Eliminate what you can rule out.', 'Trust your first read.', 'Stay on target.', 'Read the last line of the stem twice.', 'Slow is smooth, smooth is fast.']
   };
-  return { sprite, scene, mount, stop, pick, lines };
+  return { sprite, scene, mount, stop, pick, lines, rankFor, insignia };
 })();

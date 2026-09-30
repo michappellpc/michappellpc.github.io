@@ -6,7 +6,7 @@ const data = { boards: man.boards, subjects: man.subjects, questions: man.files.
 const safe = s => s.replace(/<\/script/gi, '<\\/script');
 const html = r('index.html');
 const body = html.match(/<body>([\s\S]*?)<script src/)[1];
-const out = `<title>Board Prep QBank</title>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">\n<style>\n${r('css/style.css')}\nbody{padding-inline:0}\n</style>\n${body}
+const out = `<title>Ram QBank</title>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Stardos+Stencil:wght@400;700&display=swap">\n<style>\n${r('css/style.css')}\nbody{padding-inline:0}\n</style>\n${body}
 <script>window.__QBANK_DATA=${safe(JSON.stringify(data))};</script>
 <script>\n${safe(r('js/store.js'))}\n</script>
 <script>\n${safe(r('js/mascot.js'))}\n</script>\n<script>\n${safe(r('js/app.js'))}\n</script>\n`;
