@@ -213,9 +213,9 @@ const Cloud = (() => {
     // Open sign-up: anyone may make their own free account while the admin has this switched on.
     async signupOpen() { try { return (await raw('/rest/v1/rpc/signup_open', { method: 'POST', body: {} })) === true; } catch { return false; } },
     async setSignupOpen(open) { await api('/rest/v1/rpc/set_signup_open', { method: 'POST', body: { open } }); },
-    async signUp(email, password) {
+    async signUp(email, password, programId) {
       let r;
-      try { r = await raw('/auth/v1/signup', { method: 'POST', body: { email, password } }); }
+      try { r = await raw('/auth/v1/signup', { method: 'POST', body: programId ? { email, password, data: { program_id: programId } } : { email, password } }); }
       catch (e) {
         if (e.offline) throw new Error('No connection. You need internet to create an account.');
         if (e.status === 429) throw new Error('Too many attempts. Wait a minute and try again.');
@@ -302,6 +302,18 @@ const Cloud = (() => {
         throw e;
       }
     },
+    // ---- residency programs ----
+    async programs() { try { return (await raw('/rest/v1/rpc/program_list', { method: 'POST', body: {} })) || []; } catch { return []; } },          // public: shown while signing up
+    async myProgram() { try { const r = await api('/rest/v1/rpc/my_program', { method: 'POST', body: {} }); return r && r[0] ? r[0] : null; } catch { return null; } },
+    requestProgram: id => api('/rest/v1/rpc/request_program', { method: 'POST', body: { pid: id } }),
+    leaveProgram: () => api('/rest/v1/rpc/leave_program', { method: 'POST', body: {} }),
+    facultyRoster: () => api('/rest/v1/rpc/faculty_roster', { method: 'POST', body: {} }),
+    facultySubjects: () => api('/rest/v1/rpc/faculty_subject_stats', { method: 'POST', body: {} }),
+    facultyDecide: (uid, approve) => api('/rest/v1/rpc/faculty_decide', { method: 'POST', body: { uid, approve } }),
+    facultyRemove: uid => api('/rest/v1/rpc/faculty_remove', { method: 'POST', body: { uid } }),
+    adminPrograms: () => api('/rest/v1/programs?select=*&order=name.asc'),
+    saveProgram: p => api('/rest/v1/programs?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: [p] }),
+    deleteProgram: id => api('/rest/v1/programs?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
     // ---- group averages (aggregate numbers only; the database withholds a question until enough members have answered it) ----
     async peerStats() {
       try {

@@ -1,6 +1,6 @@
 -- Minimal stand-in for the parts of Supabase that schema.sql depends on, so the privacy rules can be tested on plain Postgres.
 create schema if not exists auth;
-create table if not exists auth.users (id uuid primary key default gen_random_uuid(), email text, raw_app_meta_data jsonb not null default '{}');
+create table if not exists auth.users (id uuid primary key default gen_random_uuid(), email text, raw_app_meta_data jsonb not null default '{}', raw_user_meta_data jsonb not null default '{}');
 create or replace function auth.uid() returns uuid language sql stable as
 $$ select nullif(coalesce(current_setting('request.jwt.claim.sub', true), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')), '')::uuid $$;
 do $$ begin

@@ -47,10 +47,12 @@ const handler = async req => {
 
     if (body.action === 'create') {
       const role = body.role || 'member', plan = body.plan || 'pro';
-      if (!['member', 'reviewer', 'admin'].includes(role) || !['free', 'pro'].includes(plan)) return reply(400, { error: 'Unknown role or plan.' });
+      if (!['member', 'reviewer', 'faculty', 'admin'].includes(role) || !['free', 'pro'].includes(plan)) return reply(400, { error: 'Unknown role or plan.' });
       const note = body.note ? String(body.note).slice(0, 80) : null;
+      const program_id = body.program_id ? String(body.program_id).slice(0, 60) : null;
+      if (role === 'faculty' && !program_id) return reply(400, { error: 'Faculty need a program.' });
       // 1. approve the email (this also switches on an account that already exists)
-      const ap = await fetch(BASE + '/rest/v1/allowed_emails?on_conflict=email', { method: 'POST', headers: { ...SERVICE, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify([{ email, role, plan, note }]) });
+      const ap = await fetch(BASE + '/rest/v1/allowed_emails?on_conflict=email', { method: 'POST', headers: { ...SERVICE, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify([program_id ? { email, role, plan, note, program_id } : { email, role, plan, note }]) });
       if (!ap.ok) return reply(500, { error: 'Could not save the approval.' });
       // 2. create the account with a temporary password; the person must choose their own at first sign-in
       const password = tempPassword();
