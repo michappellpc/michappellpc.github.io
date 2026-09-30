@@ -1,6 +1,6 @@
 # Turning on private accounts
 
-This switches Ram QBank from "anyone with the link can use it" to **invitation-only, with a private question bank**:
+This switches RAMQBank from "anyone with the link can use it" to **invitation-only, with a private question bank**:
 
 - Only people whose email you approve can sign in.
 - The questions live in a private database. They are not in this public repository and are only sent to approved, signed-in people.
@@ -16,7 +16,7 @@ You need: a computer, an email address for your Supabase account, and (for step 
 ## 1. Create the database project
 
 1. Go to **supabase.com** and sign up (free).
-2. Click **New project**. Name it `ram-qbank`. Choose the region closest to your residents.
+2. Click **New project**. Name it `ramqbank`. Choose the region closest to your residents.
 3. Make up a **database password** and save it in a password manager. You will rarely need it.
 4. Wait a couple of minutes while it sets up.
 
@@ -27,6 +27,8 @@ You need: a computer, an email address for your Supabase account, and (for step 
 3. Click **Run**. You should see "Success. No rows returned".
 
 This is safe to run again later. It creates the tables, and the rules that make each person's data private.
+
+**Updating an existing project:** when a new version of the app adds features (for example the Questions editor and the reviewer role), paste the latest `schema.sql` and Run it once more. Nothing is lost. Until you do, the app keeps working for members, and the Questions page shows a "one more setup step" note.
 
 ## 3. Approve people, starting with yourself
 
@@ -144,6 +146,8 @@ If something fails, tell me exactly what you saw (a screenshot helps) and I will
 **Approve, change or remove a person:** use **Admin > Approved emails** in the app (or Table Editor > `allowed_emails`). Removing an email blocks them at once. Creating the account itself is still done under Authentication > Users (step 4), because creating logins needs Supabase's own tools. To delete an account entirely, also delete it there.
 
 **A resident forgot their password:** they use **Forgot password** on the sign-in screen (needs email set up), or you set a new one for them under Authentication > Users. Everyone can change their own password in **Settings**.
+
+**Add, edit, review or remove questions:** **Admin > Questions** (see docs/QUESTION-GUIDE.md). Give physician reviewers the `reviewer` role so they can review without seeing member data. Use **Download backup** now and then.
 
 **See how the group is doing:** **Admin** shows members, how many questions each has answered, and the hardest questions. **Download CSV** exports the member list.
 

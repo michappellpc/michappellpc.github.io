@@ -13,6 +13,8 @@ jobs:
         with: { node-version: 20 }
       - name: Validate demo questions
         run: node qbank/tools/validate.js --summary
+      - name: Test the shared question checker
+        run: node qbank/tools/test-qvalidate.js
   database-rules:
     runs-on: ubuntu-latest
     services:
