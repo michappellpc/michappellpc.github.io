@@ -1,0 +1,5 @@
+# Real questions and secrets must never enter this public repo
+qbank/private/
+.env
+.env.*
+*.local
