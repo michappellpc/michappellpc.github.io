@@ -175,7 +175,7 @@ function dashboard() {
   </div>
   `;
   document.getElementById('cover-text').innerHTML = `<h2 class="pagetitle">Dashboard</h2><p>${esc(headline)}</p><a class="btn primary" href="#/create">Create a new test</a>`;
-  if (mascotOn()) Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 5 });
+  if (mascotOn()) Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 6 });
 }
 
 // ---------- flagged questions ----------

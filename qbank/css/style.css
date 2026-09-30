@@ -241,7 +241,7 @@ td,th{padding:10px 10px}tbody tr:hover{background:var(--sel)}
 .cover{position:relative;border-radius:8px;overflow:hidden;margin:0 0 16px;background:#1c2a3a;color:#fff}
 .cover-art,.cover-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .cover-shade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(14,21,7,.78) 0,rgba(14,21,7,.35) 55%,rgba(14,21,7,0) 100%)}
-.cover-body{position:relative;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding:24px 26px 14px;min-height:200px}
+.cover-body{position:relative;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding:20px 26px 10px;min-height:215px}
 .cover-text{align-self:center;max-width:460px}.cover-text .pagetitle{color:#fff;font-size:1.6rem}
 .cover-text p{margin:6px 0 16px;color:rgba(255,255,255,.9)}
 .cover .scene-slot{position:static}
