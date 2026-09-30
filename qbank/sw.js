@@ -1,6 +1,6 @@
 // Offline support. App files and questions: network first (always fresh when online), cached copy when offline.
 // Fonts and icons: cache first. Bump VERSION to force old caches to be dropped.
-const VERSION = 'qbank-v16';
+const VERSION = 'qbank-v18';
 const CORE = ['./', 'index.html', 'css/style.css', 'privacy.html', 'terms.html', 'js/store.js', 'js/cloud.js', 'js/qvalidate.js', 'js/admin.js', 'js/mascot.js', 'js/app.js', 'manifest.webmanifest',
   'fonts/stardos-stencil-latin-400-normal.woff2', 'fonts/stardos-stencil-latin-700-normal.woff2',
   'icons/logo.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'data/manifest.json', 'data/config.json'];
@@ -8,7 +8,7 @@ const CORE = ['./', 'index.html', 'css/style.css', 'privacy.html', 'terms.html',
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const cache = await caches.open(VERSION);
-    await cache.addAll(CORE);
+    await Promise.all(CORE.map(async u => { const r = await fetch(u, { cache: 'reload' }); if (!r.ok) throw new Error(u); await cache.put(u, r); }));   // 'reload' skips the browser cache so nothing stale is stored
     try { // also cache every question file listed in the data manifest
       const m = await (await fetch('data/manifest.json', { cache: 'no-store' })).json();
       await Promise.all(m.files.map(f => cache.add('data/' + f).catch(() => {})));
@@ -34,7 +34,7 @@ self.addEventListener('fetch', e => {
       const hit = await cache.match(req); if (hit) return hit;
     }
     try {
-      const res = await fetch(req);
+      const res = await fetch(req, { cache: 'no-cache' });     // always ask the server, so an update is never hidden by the browser's own cache
       if (res.ok) cache.put(req, res.clone());
       return res;
     } catch {

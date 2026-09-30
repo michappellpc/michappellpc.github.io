@@ -9,6 +9,7 @@ P() { psql -X -q -v ON_ERROR_STOP=1 "$@"; }
 psql -X -q -d postgres -c "drop database if exists $DB" -c "create database $DB" >/dev/null || { echo "cannot create test database"; exit 2; }
 P -d $DB -f "$HERE/shim.sql" >/dev/null && P -d $DB -f "$HERE/../schema.sql" >/dev/null || { echo "schema failed to load"; exit 2; }
 
+psql -X -q -d $DB -c "update app_settings set value = 'false' where key = 'open_signup'" >/dev/null   # the seeded people below predate open sign-up
 declare -A U=( [admin]=00000000-0000-0000-0000-00000000000a [a]=00000000-0000-0000-0000-0000000000a1 [b]=00000000-0000-0000-0000-0000000000b2
                [c]=00000000-0000-0000-0000-0000000000c3 [d]=00000000-0000-0000-0000-0000000000d4 [e]=00000000-0000-0000-0000-0000000000e5
                [rev]=00000000-0000-0000-0000-0000000000f6 )
@@ -216,4 +217,26 @@ eq  "the review rules are active after upgrade"  "draft" "$(as admin "update que
 P -d $DB -f "$HERE/../schema.sql" >/dev/null 2>&1 && ok "running it a second time is harmless" || bad "running it a second time is harmless" "no error" "error"
 DB=$DB_MAIN
 
+echo; echo "Open sign-up"
+eq  "anyone can ask whether sign-up is open"        "f" "$(as anon "select signup_open();")"
+eq  "a member cannot flip the switch"               "yes" "$(as a "select set_signup_open(true);" 2>&1 | grep -q 'admins only' && echo yes)"
+eq  "an admin can open sign-up"                     "t" "$(as admin "select set_signup_open(true); commit;" >/dev/null; as anon "select signup_open();")"
+root "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000f1', 'Stranger@Site.com')" >/dev/null
+eq  "a stranger who signs up gets a free member account" "true,member,free" "$(root "select active||','||role||','||plan from profiles where email='stranger@site.com'")"
+eq  "and appears in the approved list"              "self sign-up" "$(root "select note from allowed_emails where email='stranger@site.com'")"
+eq  "a free self sign-up sees no pro question"      "0" "$(psql -X -q -t -A -d $DB <<SQL
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-0000000000f1"}',true) \gset
+select count(*) from questions where tier='pro';
+SQL
+)"
+root "insert into allowed_emails (email, role, plan) values ('boss@site.com','admin','pro')" >/dev/null
+root "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000f2', 'boss@site.com')" >/dev/null
+eq  "signing up cannot claim a pre-approved admin role" "member,free" "$(root "select role||','||plan from profiles where email='boss@site.com'")"
+root "insert into allowed_emails (email, role, plan) values ('made@site.com','member','pro')" >/dev/null
+root "insert into auth.users (id, email, raw_app_meta_data) values ('00000000-0000-0000-0000-0000000000f3', 'made@site.com', '{\"invited\":\"true\"}')" >/dev/null
+eq  "an account made by an admin gets what the list says" "pro" "$(root "select plan from profiles where email='made@site.com'")"
+eq  "user-supplied metadata cannot make a self sign-up privileged" "member,free" "$(root "insert into allowed_emails (email, role, plan) values ('x@site.com','admin','pro')" >/dev/null; root "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000f4', 'x@site.com')" >/dev/null; root "select role||','||plan from profiles where email='x@site.com'")"
+as admin "select set_signup_open(false); commit;" >/dev/null
+root "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000f5', 'late@site.com')" >/dev/null
+eq  "with sign-up closed, a stranger gets no access" "f" "$(root "select active from profiles where email='late@site.com'")"
 echo; echo "$PASS passed, $FAIL failed"; [[ $FAIL -eq 0 ]]
