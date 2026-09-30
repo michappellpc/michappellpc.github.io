@@ -1,27 +1,28 @@
-// Pixel-art mascot "Pulse": a chubby aviator bird with goggles and a red cross on his belly.
+// Pixel-art mascot "Pulse": a fluffy aviator ram with curled horns, goggles, and a red cross badge.
 // Shapes are rasterized from ellipses with light/shadow bands, then outlined, so every pose shares one clean style.
 const Mascot = (() => {
   const N = 32;
   const PAL = {
-    P: '#5b98e8', B: '#3c70bd', L: '#8dbdf7',            // feathers: base, shadow, light
-    F: '#fff6e6', f: '#ecd6b4',                          // belly: base, shadow
-    K: '#ffb02e', k: '#e08512',                          // beak and feet
-    W: '#ffffff', D: '#1b2a41', o: '#1b2a41',            // eye white, pupil/lines, outline
-    G: '#a6ecff', Y: '#e8b23a', S: '#7a4a2a',            // goggle glass, frame, strap
-    R: '#ff8f9c', r: '#e04b4b', M: '#8a2d3a', y: '#ffd23f', b: '#7cc4ff'
+    W: '#ffffff', C: '#fbf3e4', V: '#d6cce6',              // wool: light, base, shadow
+    T: '#e6b88a', t: '#c99566', a: '#a9784c',              // face: base, chin shadow, rim
+    Z: '#f7e0c2', n: '#e8808f', p: '#f3a9b4',              // muzzle, nose, inner ear / cheeks
+    H: '#efc65c', h: '#b98620', X: '#4a382a',              // horn, horn shadow, hoof
+    E: '#ffffff', D: '#1b2a41', o: '#1b2a41',              // eye white, pupil/lines, outline
+    G: '#a6ecff', Y: '#e8b23a', S: '#7a4a2a',              // goggle glass, frame, strap
+    r: '#e04b4b', M: '#8a2d3a', y: '#ffd23f', b: '#7cc4ff'
   };
   const blank = () => Array.from({ length: N }, () => Array(N).fill('.'));
   const put = (g, x, y, ch) => { if (x >= 0 && x < N && y >= 0 && y < N) g[y][x] = ch; };
   const ell = (g, cx, cy, rx, ry, pick) => {
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const dx = (x + .5 - cx) / rx, dy = (y + .5 - cy) / ry;
-      if (dx * dx + dy * dy <= 1) g[y][x] = pick(dx, dy);
+      if (dx * dx + dy * dy <= 1) g[y][x] = pick(dx, dy, x, y);
     }
   };
-  const feather = (dx, dy) => (-.6 * dx - .8 * dy > .62 ? 'L' : .55 * dx + .85 * dy > .5 ? 'B' : 'P');
   const line = (g, pts, ch) => pts.forEach(([x, y]) => put(g, x, y, ch));
   const mirror = pts => pts.map(([x, y]) => [N - 1 - x, y]);
   const both = (g, pts, ch) => { line(g, pts, ch); line(g, mirror(pts), ch); };
+  const woolShade = (dx, dy) => (-.6 * dx - .8 * dy > .6 ? 'W' : .55 * dx + .85 * dy > .45 ? 'V' : 'C');
 
   function outline(g) {
     const add = [];
@@ -31,51 +32,71 @@ const Mascot = (() => {
   }
   const sparkle = (g, x, y) => line(g, [[x, y], [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]], 'y');
 
+  // fluffy wool silhouette: a core ellipse plus a ring of bumps
+  const BUMPS = Array.from({ length: 12 }, (_, i) => [16 + 10.2 * Math.cos(i * Math.PI / 6), 17.5 + 9.2 * Math.sin(i * Math.PI / 6)]);
+  const inWool = (x, y, grow) => {
+    const px = x + .5, py = y + .5;
+    return ((px - 16) / (10 + grow)) ** 2 + ((py - 17.5) / (9.2 + grow)) ** 2 <= 1 || BUMPS.some(([bx, by]) => (px - bx) ** 2 + (py - by) ** 2 <= (3.3 + grow) ** 2);
+  };
+  function wool(g) {
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inWool(x, y, 1)) g[y][x] = 'o';
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inWool(x, y, 0)) g[y][x] = woolShade((x + .5 - 16) / 13, (y + .5 - 17.5) / 12);
+  }
+  // curled horn: a ring with a notch, so it reads as a spiral
+  function horn(g, flip) {
+    const cx = flip ? N - 6.6 : 6.6, cy = 14.2;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const dx = x + .5 - cx, dy = y + .5 - cy, d = Math.hypot(dx, dy);
+      const ang = Math.atan2(dy, flip ? -dx : dx) * 180 / Math.PI;
+      const notch = ang > -85 && ang < -20;
+      if (d <= 5.8 && d >= 1.2 && !(notch && d > 2.6)) g[y][x] = 'h';
+    }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const dx = x + .5 - cx, dy = y + .5 - cy, d = Math.hypot(dx, dy);
+      const ang = Math.atan2(dy, flip ? -dx : dx) * 180 / Math.PI;
+      const notch = ang > -85 && ang < -20;
+      if (d <= 5 && d >= 2.6 && !notch) g[y][x] = d >= 3.5 && d <= 4.2 ? 'h' : 'H';
+      if (d <= 1.4) g[y][x] = 'H';
+    }
+  }
+
   function pose(name) {
     const g = blank();
     const up = name === 'cheer' || name === 'happy';
-    // wings sit behind the body; raised for cheering
-    const wy = name === 'cheer' ? 12 : name === 'happy' ? 15.5 : name === 'sad' ? 22 : 20;
-    const wr = name === 'cheer' || name === 'happy' ? 4.6 : 5.8;
-    ell(g, 3.6, wy, 2.9, wr, feather); ell(g, N - 3.6, wy, 2.9, wr, feather);
-    outline(g);
-    // feet
-    line(g, [[11, 28], [12, 28], [13, 28], [11, 29], [12, 29], [13, 29]], 'k'); both(g, [[11, 28], [12, 28], [13, 28], [11, 29], [12, 29], [13, 29]], 'k');
-    // body and belly
-    ell(g, 16, 17, 13, 12, () => 'o');
-    ell(g, 16, 17, 12, 11, feather);
-    ell(g, 16, 23.5, 7.6, 5.4, (dx, dy) => dy > .35 ? 'f' : 'F');
-    // red cross
-    line(g, [[15, 23], [16, 23], [15, 24], [16, 24], [15, 25], [16, 25], [15, 26], [16, 26], [15, 27], [16, 27], [13, 25], [14, 25], [17, 25], [18, 25], [13, 26], [14, 26], [17, 26], [18, 26]], 'r');
+    wool(g);
+    horn(g, false); horn(g, true);
+    // ears
+    [[6.8, 20.2], [N - 6.8, 20.2]].forEach(([ex, ey]) => { ell(g, ex, ey, 3.7, 2.2, () => 'a'); ell(g, ex, ey, 3.2, 1.7, () => 'T'); });
+    put(g, 5, 20, 'p'); put(g, 6, 20, 'p'); put(g, N - 6, 20, 'p'); put(g, N - 7, 20, 'p');
+    // face and muzzle
+    ell(g, 16, 20, 8.8, 8.2, () => 'a');
+    ell(g, 16, 20, 8, 7.4, (dx, dy) => (dy > .55 ? 't' : 'T'));
+    ell(g, 16, 25, 5, 3.4, () => 'Z');
+    line(g, [[14, 22], [15, 22], [16, 22], [17, 22], [15, 23], [16, 23]], 'n');
     // eyes
-    const eyeX = [10.5, 21.5];
+    const eyeX = [12, 20];
     if (name === 'idle' || name === 'sad' || name === 'cheer-open') {
-      eyeX.forEach(cx => { ell(g, cx, 16.5, 3.7, 4.5, () => 'W'); });
-      const py = name === 'sad' ? 18 : 17;
-      eyeX.forEach((cx, i) => { ell(g, cx + (i ? -.6 : .6), py, 1.7, 2.3, () => 'D'); put(g, Math.round(cx + (i ? -1.6 : -.4)), py - 2, 'W'); });
+      eyeX.forEach(cx => { ell(g, cx, 18.6, 3.1, 3.5, () => 'D'); ell(g, cx, 18.6, 2.5, 2.9, () => 'E'); });
+      const py = name === 'sad' ? 19.6 : 18.8;
+      eyeX.forEach(cx => { ell(g, cx, py, 1.6, 2.1, () => 'D'); put(g, Math.round(cx - .9), Math.round(py - 1.3), 'E'); });
     }
-    if (name === 'blink') { both(g, [[8, 17], [9, 18], [10, 18], [11, 18], [12, 17]], 'D'); }
-    if (up) { both(g, [[8, 18], [9, 17], [10, 16], [11, 16], [12, 17], [13, 18]], 'D'); both(g, [[8, 17], [13, 17]], 'D'); }
-    if (name === 'sad') { both(g, [[7, 13], [8, 13], [9, 12], [10, 12], [11, 11], [12, 11]], 'D'); both(g, [[6, 20], [6, 21], [6, 22]], 'b'); }
+    if (name === 'blink') both(g, [[10, 19], [11, 19], [12, 19], [13, 19]], 'D');
+    if (up) both(g, [[10, 19], [11, 18], [12, 17], [13, 18], [13, 19]], 'D');
+    if (name === 'sad') { both(g, [[9, 15], [10, 15], [11, 14], [12, 14], [13, 13], [14, 13]], 'D'); both(g, [[9, 21], [9, 22]], 'b'); }
     // cheeks
-    both(g, [[6, 22], [7, 22], [6, 23], [7, 23]], 'R');
-    // beak
-    if (up) {
-      line(g, [[14, 19], [15, 19], [16, 19], [17, 19], [14, 20], [15, 20], [16, 20], [17, 20]], 'M');
-      line(g, [[15, 20], [16, 20]], 'M');
-      line(g, [[13, 18], [14, 18], [15, 18], [16, 18], [17, 18], [18, 18]], 'K');
-      line(g, [[14, 21], [15, 21], [16, 21], [17, 21]], 'k');
-    } else if (name === 'sad') {
-      line(g, [[14, 19], [15, 19], [16, 19], [17, 19], [15, 20], [16, 20]], 'K'); line(g, [[15, 21], [16, 21]], 'k');
-    } else {
-      line(g, [[14, 19], [15, 19], [16, 19], [17, 19], [14, 20], [15, 20], [16, 20], [17, 20]], 'K'); line(g, [[15, 21], [16, 21]], 'k');
-    }
-    // goggles pushed up on the forehead
-    line(g, [[8, 9], [9, 9], [10, 9], [11, 9], [12, 9], [13, 9], [14, 9], [15, 9], [16, 9], [17, 9], [18, 9], [19, 9], [20, 9], [21, 9], [22, 9], [23, 9]], 'S');
-    [[10.5, 7.6], [21.5, 7.6]].forEach(([cx, cy]) => { ell(g, cx, cy, 3.6, 3, () => 'Y'); ell(g, cx, cy, 2.5, 2, () => 'G'); });
-    both(g, [[9, 7], [10, 6]], 'W');
+    both(g, [[8, 23], [9, 23]], 'p');
+    // mouth
+    if (up) { line(g, [[14, 25], [15, 25], [16, 25], [17, 25], [14, 26], [15, 26], [16, 26], [17, 26]], 'M'); line(g, [[15, 26], [16, 26]], 'p'); }
+    else if (name === 'sad') line(g, [[14, 26], [15, 25], [16, 25], [17, 26]], 'D');
+    else line(g, [[14, 25], [15, 26], [16, 26], [17, 25]], 'D');
+    // red cross badge on the wool
+    line(g, [[8, 26], [7, 27], [8, 27], [9, 27], [8, 28]], 'r');
+    // aviator goggles on the forehead
+    line(g, [[11, 12], [12, 12], [13, 12], [14, 12], [15, 12], [16, 12], [17, 12], [18, 12], [19, 12], [20, 12]], 'S');
+    [[13, 11], [19, 11]].forEach(([cx, cy]) => { ell(g, cx, cy, 3, 2.5, () => 'Y'); ell(g, cx, cy, 2.1, 1.7, () => 'G'); });
+    put(g, 12, 10, 'E'); put(g, 18, 10, 'E');
     outline(g);
-    if (name === 'cheer') { sparkle(g, 3, 4); sparkle(g, 28, 3); put(g, 1, 9, 'y'); put(g, 30, 10, 'y'); }
+    if (name === 'cheer') { sparkle(g, 2, 3); sparkle(g, 29, 2); put(g, 1, 8, 'y'); put(g, 30, 9, 'y'); }
     return g;
   }
 
@@ -152,9 +173,9 @@ const Mascot = (() => {
   }
 
   const lines = {
-    correct: ['Nailed it!', 'Cleared for takeoff!', 'Smooth landing!', 'Textbook answer, Doc.', 'Right on the glide path.'],
+    correct: ['Nailed it!', 'Cleared for takeoff!', 'Smooth landing!', 'Textbook answer, Doc.', 'Right on the glide path.', 'Ram-tastic!'],
     wrong: ['Turbulence. Read the explanation and we\'ll nail the next one.', 'Every miss is a study note.', 'Shake it off. The next one is yours.', 'Better to learn it here than on boards day.'],
-    tips: ['Cross out what you can rule out.', 'Trust your first read.', 'Breathe. You\'ve got this.', 'Read the last line of the stem twice.', 'Eliminate, then decide.']
+    tips: ['Cross out what you can rule out.', 'Don\'t be sheepish. Trust your first read.', 'Breathe. You\'ve got this.', 'Read the last line of the stem twice.', 'Eliminate, then decide.']
   };
   return { sprite, scene, mount, stop, pick, lines };
 })();
