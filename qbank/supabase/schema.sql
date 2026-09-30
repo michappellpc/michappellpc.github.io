@@ -106,8 +106,27 @@ create table if not exists public.feedback (
   admin_note  text check (char_length(admin_note) <= 1000),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
+  kind        text not null default 'feedback' check (kind in ('feedback', 'support')),     -- feedback = about a question; support = a general message
+  subject     text check (char_length(subject) <= 120),
+  member_unread boolean not null default false,        -- the team has replied and the member has not opened it yet
+  last_activity timestamptz not null default now(),
   unique (user_id, client_id)
 );
+alter table public.feedback add column if not exists kind text not null default 'feedback' check (kind in ('feedback', 'support'));
+alter table public.feedback add column if not exists subject text check (char_length(subject) <= 120);
+alter table public.feedback add column if not exists member_unread boolean not null default false;
+alter table public.feedback add column if not exists last_activity timestamptz not null default now();
+-- Replies inside a conversation (the first message lives on the feedback row). Read and written only through the functions below.
+create table if not exists public.feedback_messages (
+  id          bigint generated always as identity primary key,
+  feedback_id bigint not null references public.feedback (id) on delete cascade,
+  sender      text not null check (sender in ('member', 'team')),
+  author_id   uuid references auth.users (id) on delete set null,
+  message     text not null check (char_length(message) between 1 and 1500),
+  created_at  timestamptz not null default now()
+);
+create index if not exists feedback_messages_thread_idx on public.feedback_messages (feedback_id, created_at);
+alter table public.feedback_messages enable row level security;
 alter table public.feedback enable row level security;
 
 -- ------------------------------------------------------- per-person data
@@ -510,13 +529,15 @@ begin
   update public.profiles set program_id = null, program_status = null where id = uid and program_id = fp and role = 'member';
 end $$;
 
--- ------------------------------------------------------------ feedback functions
+-- ------------------------------------------------------------ feedback and support conversations
 create or replace function public.feedback_guard() returns trigger
   language plpgsql security definer set search_path = public as
 $$
 begin
   if auth.uid() is null then return new; end if;
   new.status := 'new'; new.admin_note := null; new.updated_at := now();      -- a member cannot mark their own message
+  new.member_unread := false; new.last_activity := now();
+  if new.kind = 'support' then new.question_id := null; new.category := 'other'; new.subject := coalesce(nullif(trim(new.subject), ''), 'Support'); else new.subject := null; end if;
   if (select count(*) from public.feedback where user_id = auth.uid() and created_at > now() - interval '24 hours') >= 30 then
     raise exception 'too many messages today';
   end if;
@@ -525,17 +546,21 @@ end $$;
 drop trigger if exists feedback_guard on public.feedback;
 create trigger feedback_guard before insert on public.feedback for each row execute function public.feedback_guard();
 
-create or replace function public.feedback_inbox()
-  returns table (id bigint, question_id text, question_stem text, category text, message text, context text, status text, admin_note text, created_at timestamptz, reporter text)
+-- the team's view: every conversation, newest activity first. Only admins see who sent it.
+drop function if exists public.feedback_inbox();
+create function public.feedback_inbox()
+  returns table (id bigint, kind text, subject text, question_id text, question_stem text, category text, message text, context text, status text, admin_note text,
+                 created_at timestamptz, last_activity timestamptz, replies int, reporter text)
   language plpgsql stable security definer set search_path = public as
 $$
 begin
   if not public.can_edit() then raise exception 'editors only'; end if;
   return query
-    select f.id, f.question_id, left(q.stem, 140), f.category, f.message, f.context, f.status, f.admin_note, f.created_at,
+    select f.id, f.kind, f.subject, f.question_id, left(q.stem, 140), f.category, f.message, f.context, f.status, f.admin_note, f.created_at, f.last_activity,
+           (select count(*)::int from public.feedback_messages m where m.feedback_id = f.id),
            case when public.is_admin() then p.email end
     from public.feedback f left join public.questions q on q.id = f.question_id left join public.profiles p on p.id = f.user_id
-    order by f.created_at desc limit 500;
+    order by f.last_activity desc limit 500;
 end $$;
 
 create or replace function public.feedback_unread_count() returns int
@@ -553,6 +578,74 @@ begin
   if not public.can_edit() then raise exception 'editors only'; end if;
   if new_status not in ('new', 'read', 'resolved') then raise exception 'unknown status'; end if;
   update public.feedback set status = new_status, admin_note = coalesce(note, admin_note), updated_at = now() where id = fid;
+end $$;
+
+-- the whole conversation, for the team. The first message is the member's; later ones say who wrote them (admins see which teammate).
+create or replace function public.thread_messages(fid bigint)
+  returns table (sender text, message text, created_at timestamptz, author text)
+  language plpgsql stable security definer set search_path = public as
+$$
+begin
+  if not public.can_edit() then raise exception 'editors only'; end if;
+  return query
+    select 'member'::text, f.message, f.created_at, null::text from public.feedback f where f.id = fid
+    union all
+    select m.sender, m.message, m.created_at, case when m.sender = 'team' and public.is_admin() then p.email end
+    from public.feedback_messages m left join public.profiles p on p.id = m.author_id where m.feedback_id = fid
+    order by 3;
+end $$;
+
+-- a reply from the team: the member is told (member_unread), and it moves out of "new"
+create or replace function public.thread_team_reply(fid bigint, msg text) returns void
+  language plpgsql security definer set search_path = public as
+$$
+begin
+  if not public.can_edit() then raise exception 'editors only'; end if;
+  if char_length(trim(msg)) < 1 or char_length(msg) > 1500 then raise exception 'a reply must be 1 to 1500 characters'; end if;
+  if not exists (select 1 from public.feedback where id = fid) then raise exception 'no such conversation'; end if;
+  insert into public.feedback_messages (feedback_id, sender, author_id, message) values (fid, 'team', auth.uid(), trim(msg));
+  update public.feedback set member_unread = true, last_activity = now(), updated_at = now(), status = case when status = 'new' then 'read' else status end where id = fid;
+end $$;
+
+-- the member's side: their own conversations only
+create or replace function public.my_threads()
+  returns table (id bigint, kind text, subject text, question_id text, first_message text, created_at timestamptz, last_activity timestamptz, status text, member_unread boolean, replies int)
+  language sql stable security definer set search_path = public as
+$$
+  select f.id, f.kind, f.subject, f.question_id, f.message, f.created_at, f.last_activity, f.status, f.member_unread,
+         (select count(*)::int from public.feedback_messages m where m.feedback_id = f.id)
+  from public.feedback f where f.user_id = auth.uid() and public.is_active() order by f.last_activity desc limit 200
+$$;
+
+create or replace function public.my_thread_messages(fid bigint) returns table (sender text, message text, created_at timestamptz)
+  language sql stable security definer set search_path = public as
+$$
+  select 'member'::text, f.message, f.created_at from public.feedback f where f.id = fid and f.user_id = auth.uid() and public.is_active()
+  union all
+  select m.sender, m.message, m.created_at from public.feedback_messages m join public.feedback f on f.id = m.feedback_id where f.id = fid and f.user_id = auth.uid() and public.is_active()
+  order by 3
+$$;
+
+create or replace function public.my_thread_seen(fid bigint) returns void
+  language sql security definer set search_path = public as
+$$ update public.feedback set member_unread = false where id = fid and user_id = auth.uid() and member_unread $$;
+
+create or replace function public.my_unread_replies() returns int
+  language sql stable security definer set search_path = public as
+$$ select count(*)::int from public.feedback where user_id = auth.uid() and member_unread and public.is_active() $$;
+
+create or replace function public.thread_member_reply(fid bigint, msg text) returns void
+  language plpgsql security definer set search_path = public as
+$$
+begin
+  if not public.is_active() then raise exception 'not active'; end if;
+  if not exists (select 1 from public.feedback where id = fid and user_id = auth.uid()) then raise exception 'no such conversation'; end if;
+  if char_length(trim(msg)) < 1 or char_length(msg) > 1500 then raise exception 'a reply must be 1 to 1500 characters'; end if;
+  if (select count(*) from public.feedback_messages where author_id = auth.uid() and sender = 'member' and created_at > now() - interval '24 hours') >= 30 then
+    raise exception 'too many messages today';
+  end if;
+  insert into public.feedback_messages (feedback_id, sender, author_id, message) values (fid, 'member', auth.uid(), trim(msg));
+  update public.feedback set status = 'new', last_activity = now(), updated_at = now() where id = fid;      -- back to the top of the team's inbox
 end $$;
 
 -- ------------------------------------------------------------ group averages (like the percentages UWorld shows)
@@ -631,6 +724,8 @@ grant execute on function public.admin_member_summary(), public.admin_question_s
 grant execute on function public.signup_open() to anon, authenticated;
 grant execute on function public.feedback_inbox(), public.feedback_unread_count() to authenticated;
 grant execute on function public.feedback_set(bigint, text, text) to authenticated;
+grant execute on function public.thread_messages(bigint), public.thread_team_reply(bigint, text) to authenticated;
+grant execute on function public.my_threads(), public.my_thread_messages(bigint), public.my_thread_seen(bigint), public.my_unread_replies(), public.thread_member_reply(bigint, text) to authenticated;
 grant execute on function public.program_list() to anon, authenticated;
 grant execute on function public.my_program(), public.leave_program(), public.faculty_program_id(), public.faculty_roster(), public.faculty_subject_stats() to authenticated;
 grant execute on function public.request_program(text), public.faculty_decide(uuid, boolean), public.faculty_remove(uuid) to authenticated;

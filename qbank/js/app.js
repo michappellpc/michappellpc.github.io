@@ -155,7 +155,7 @@ async function route() {
   if (p === '' || p === 'results') refreshPeer();
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
-  ({ '': dashboard, create: () => create(arg, arg2), flagged: flaggedPage, program: () => Program.facultyPage(), lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
+  ({ '': dashboard, create: () => create(arg, arg2), flagged: flaggedPage, program: () => Program.facultyPage(), support: () => Support.page(arg), lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
@@ -218,6 +218,7 @@ function dashboard() {
   const headline = acc === null ? 'Start a test to build your performance profile.' : `${pct(c, c + w)}% correct across ${c + w} answers.` + (missed ? ` ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
   $app.innerHTML = `
   ${Mascot.scene(bank.config.coverImage)}
+  ${bank.unreadReplies ? `<div class="card notice">You have <b>${bank.unreadReplies} new repl${bank.unreadReplies === 1 ? 'y' : 'ies'}</b> from the team. <a href="#/support">Open Support</a></div>` : ''}
   ${bank.program && bank.program.status === 'pending' ? `<div class="card notice">Waiting for faculty at <b>${esc(bank.program.name)}</b> to approve you. Until they do, they cannot see any of your progress. <a href="#/settings">Settings</a></div>` : ''}
   ${active ? `<div class="card row spread"><div><b>Test in progress</b> <span class="muted">(${Object.keys(active.answers).length}/${active.qids.length} answered)</span></div><a class="btn primary" href="#/test">Resume</a></div>` : ''}
   <div class="card rank">
@@ -628,10 +629,12 @@ function renderBlocked(email) {
 }
 
 let badgeTimer = null;
-async function refreshInboxBadge() {                       // the red number on the Admin menu item: messages nobody has looked at yet
-  if (!Cloud.enabled || !profile || !Admin.isEditor()) return;
-  const n = await Cloud.unreadFeedback(); Admin.unread = n;
-  const b = document.getElementById('inbox-badge'); if (b) { b.hidden = !n; b.innerHTML = n ? `<span aria-hidden="true">${n > 99 ? '99+' : n}</span><span class="sr"> ${n} new message${n === 1 ? '' : 's'}</span>` : ''; }
+async function refreshInboxBadge() {                       // red numbers on the menu: new messages for the team, new replies for a member
+  if (!Cloud.enabled || !profile) return;
+  const put = (id, n, word) => { const b = document.getElementById(id); if (b) { b.hidden = !n; b.innerHTML = n ? `<span aria-hidden="true">${n > 99 ? '99+' : n}</span><span class="sr"> ${n} ${word}${n === 1 ? '' : 's'}</span>` : ''; } };
+  if (Admin.isEditor()) { const n = await Cloud.unreadFeedback(); Admin.unread = n; put('inbox-badge', n, 'new message'); }
+  const before = bank.unreadReplies || 0, r = await Cloud.myUnreadReplies(); bank.unreadReplies = r; put('support-badge', r, 'new reply');
+  if (r !== before && ready && !Store.data.active && /^#?\/?$/.test(location.hash)) route();       // refresh the dashboard notice
 }
 async function startSession() {
   ready = false; lockUI(true);
@@ -659,6 +662,7 @@ async function startSession() {
   Store.hooks.reset = () => Cloud.queueReset();
   lockUI(false); ready = true;
   document.getElementById('nav-program').hidden = profile.role !== 'faculty';
+  document.getElementById('nav-support').hidden = false;
   clearInterval(badgeTimer);
   const navAdmin = document.getElementById('nav-admin');
   navAdmin.hidden = !Admin.isEditor(); navAdmin.innerHTML = (profile.role === 'admin' ? 'Admin' : 'Questions') + '<span id="inbox-badge" class="navbadge" hidden></span>'; navAdmin.setAttribute('href', profile.role === 'admin' ? '#/admin' : '#/admin/questions');
