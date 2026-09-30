@@ -376,7 +376,7 @@ function settings() {
   const th = Store.data.settings.theme;
   $app.innerHTML = `<div class="card"><h2>Settings</h2>
     <p><label for="theme">Theme</label> <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
-    <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label>
+    ${!Cloud.enabled || Admin.isEditor() ? `<label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label>` : ''}
     <label class="chk"><input type="checkbox" id="mascot" ${mascotOn() ? 'checked' : ''}> Show the mascot and encouragement</label></div>
     ${Cloud.enabled ? `<div class="card"><h3>Account</h3>
       <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.role === 'reviewer' ? 'Reviewer' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
@@ -391,7 +391,7 @@ function settings() {
       <div class="row"><button class="danger" id="reset">Reset all progress</button></div></div>`
     : `<div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
       <div class="row"><button id="exp">Export progress</button><button id="imp">Import progress</button><input type="file" id="file" accept="application/json" hidden><button class="danger" id="reset">Reset all progress</button></div></div>`}`;
-  document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.touchSettings(); };
+  if (document.getElementById('drafts')) document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.touchSettings(); };
   document.getElementById('mascot').onchange = e => { Store.data.settings.mascot = e.target.checked; Store.save(); };
   document.getElementById('theme').onchange = e => { Store.data.settings.theme = e.target.value; Store.touchSettings(); applyTheme(); };
   if (!Cloud.enabled) {

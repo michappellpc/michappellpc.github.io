@@ -57,7 +57,7 @@ const Admin = (() => {
     const boardOpts = bank.boards.map(b => `<option value="${esc(b.id)}"${view.board === b.id ? ' selected' : ''}>${esc(b.name)}</option>`).join('');
     $app.innerHTML = `${tabs('questions')}
       <div class="card"><div class="row spread"><div><h2 style="margin:0">Questions</h2>
-        <p class="muted" style="margin:4px 0 0">${n.all - n.arch} active (${n.rev} reviewed, ${n.all - n.arch - n.rev} draft) &middot; ${n.arch} archived</p></div>
+        <p class="muted" style="margin:4px 0 0">${n.rev} live for members &middot; ${n.all - n.arch - n.rev} draft (hidden) &middot; ${n.arch} archived</p></div>
         <div class="row"><a class="btn primary" href="#/admin/questions/new">Add a question</a><a class="btn" href="#/admin/questions/import">Import from a chat</a><button id="backup">Download backup</button></div></div></div>
       <div class="card"><form id="flt" class="filters" onsubmit="return false" aria-label="Filter questions">
         <div><label for="fq">Search</label><input id="fq" type="search" value="${esc(view.q)}" placeholder="id, topic, or words in the question"></div>
@@ -117,7 +117,7 @@ const Admin = (() => {
     if (!ids.length) { box.innerHTML = ''; return; }
     const chosen = cache.list.filter(q => ids.includes(q.id)), allArch = chosen.every(q => q.archived), anyArch = chosen.some(q => q.archived);
     box.innerHTML = `<div class="card bulkbar" role="region" aria-label="Actions for selected questions"><b>${ids.length} selected</b>
-      <button data-b="review">Mark reviewed</button><button data-b="draft">Mark draft</button>${allArch ? '<button data-b="restore">Restore</button>' : '<button data-b="archive">Archive</button>'}
+      <button data-b="review">Mark reviewed (publish)</button><button data-b="draft">Mark draft (hide)</button>${allArch ? '<button data-b="restore">Restore</button>' : '<button data-b="archive">Archive</button>'}
       <button data-b="free">Set tier: free</button><button data-b="pro">Set tier: pro</button>${allArch ? '<button data-b="delete" class="danger">Delete permanently</button>' : ''}<button data-b="clear" class="linkish">Clear</button></div>`;
     box.querySelectorAll('[data-b]').forEach(b => b.onclick = () => bulk(b.dataset.b, ids, anyArch));
   }
@@ -126,7 +126,7 @@ const Admin = (() => {
     if (kind === 'clear') { view.sel.clear(); return paint(); }
     const n = ids.length, s = n === 1 ? 'question' : 'questions';
     try {
-      if (kind === 'review' && !(await ask(`Mark ${n} ${s} as reviewed by you (${myEmail()})? Only do this if you have read and checked ${n === 1 ? 'it' : 'them'}. Your name is recorded on ${n === 1 ? 'it' : 'each'}.`, 'Mark reviewed'))) return;
+      if (kind === 'review' && !(await ask(`Mark ${n} ${s} as reviewed by you (${myEmail()})? This makes ${n === 1 ? 'it' : 'them'} visible to members, so only do it if you have read and checked ${n === 1 ? 'it' : 'them'}. Your name is recorded on ${n === 1 ? 'it' : 'each'}.`, 'Mark reviewed'))) return;
       if (kind === 'archive' && !(await ask(`Archive ${n} ${s}? ${n === 1 ? 'It disappears' : 'They disappear'} from members but everyone's history is kept, and you can restore ${n === 1 ? 'it' : 'them'} any time.`, 'Archive'))) return;
       if (kind === 'delete') {
         if (!(await askText(`Permanently delete ${n} ${s}? This also erases every member's answer history for ${n === 1 ? 'it' : 'them'} and cannot be undone. Download a backup first if you are unsure.`, 'DELETE', 'Delete permanently'))) return;
@@ -207,8 +207,8 @@ const Admin = (() => {
       <form id="qf" novalidate>
         <div class="fgrid">
           <div><label for="f-id">Question id</label><input id="f-id" type="text" value="${esc(q0.id)}"${isNew ? '' : ' readonly'} autocomplete="off"><p class="hint">Lowercase letters, digits and hyphens, like aem-altitude-014.${isNew ? ' Suggested automatically.' : ' It cannot be changed.'}</p></div>
-          <div><label for="f-status">Status</label><select id="f-status"><option value="draft"${q0.status === 'draft' ? ' selected' : ''}>Draft</option><option value="reviewed"${q0.status === 'reviewed' ? ' selected' : ''}>Reviewed</option></select>
-            <p class="hint">Choosing Reviewed records you as the reviewer. If you change the wording of a reviewed question it returns to Draft.</p></div>
+          <div><label for="f-status">Status</label><select id="f-status"><option value="draft"${q0.status === 'draft' ? ' selected' : ''}>Draft (hidden from members)</option><option value="reviewed"${q0.status === 'reviewed' ? ' selected' : ''}>Reviewed (live for members)</option></select>
+            <p class="hint"><b>Draft</b> questions are visible only to admins and reviewers. <b>Reviewed</b> questions are live for members, and choosing it records you as the reviewer. Changing the wording of a reviewed question hides it again until it is reviewed.</p></div>
           <div><label for="f-tier">Who can see it</label><select id="f-tier"><option value="pro"${q0.tier === 'pro' ? ' selected' : ''}>Pro members</option><option value="free"${q0.tier === 'free' ? ' selected' : ''}>Free members too</option></select></div>
           <div><label for="f-diff">Difficulty</label><select id="f-diff">${[1, 2, 3].map(n => `<option value="${n}"${(q0.difficulty || 2) === n ? ' selected' : ''}>${['', 'Easy', 'Medium', 'Hard'][n]}</option>`).join('')}</select></div>
         </div>
@@ -300,7 +300,7 @@ const Admin = (() => {
         await Cloud.saveQuestions([clean]); refresh();
         const fresh = ((await ensure(true)) || { list: [] }).list.find(x => x.id === clean.id);
         let msg = isNew ? 'Saved as a draft.' : 'Saved.';
-        if (fresh && orig && orig.status === 'reviewed' && clean.status === 'reviewed' && fresh.status === 'draft') msg = 'Saved. You changed a reviewed question, so it went back to Draft and needs review again.';
+        if (fresh && orig && orig.status === 'reviewed' && clean.status === 'reviewed' && fresh.status === 'draft') msg = 'Saved. You changed a reviewed question, so it went back to Draft and is hidden from members until it is reviewed again.';
         else if (fresh && fresh.status === 'reviewed') msg = `Saved. Marked reviewed by ${fresh.reviewedBy || 'you'}.`;
         toast(msg);
         if (isNew) location.hash = '#/admin/questions/edit/' + clean.id; else Admin.formPage(clean.id).then(() => { if (warns.length) showErrors(warns, 'warnbox'); });
@@ -352,7 +352,7 @@ const Admin = (() => {
       const letters = {}; good.forEach(x => { letters[x.clean.answer] = (letters[x.clean.answer] || 0) + 1; });
       const top = Object.entries(letters).sort((a, b) => b[1] - a[1])[0], skew = good.length >= 8 && top && top[1] / good.length > 0.6;
       out.innerHTML = `<div class="card"><h3 style="margin-top:0">Check results</h3>
-        <p><b>${good.length}</b> ready to save (${good.length - repl.length} new, ${repl.length} replacing existing)${bad ? `, <b>${bad}</b> need fixes and will be skipped` : ''}.${keep ? '' : ' Everything is saved as Draft until a reviewer approves it.'}</p>
+        <p><b>${good.length}</b> ready to save (${good.length - repl.length} new, ${repl.length} replacing existing)${bad ? `, <b>${bad}</b> need fixes and will be skipped` : ''}.${keep ? '' : ' Everything is saved as Draft, hidden from members until a reviewer marks it Reviewed.'}</p>
         ${skew ? `<p class="notice">The correct answer is ${esc(top[0])} for ${top[1]} of ${good.length} questions. Ask Claude to vary the answer key.</p>` : ''}
         <div class="scroll" role="region" tabindex="0" aria-label="Import check results"><table><caption class="sr">Result for each question</caption><thead><tr><th scope="col">Question</th><th scope="col">Result</th><th scope="col">Details</th></tr></thead><tbody>${items.map(x => `<tr>
           <td>${esc(x.clean.id || '(no id)')}<div class="muted small">${esc(x.clean.subject || '')}${x.clean.topic ? ' &middot; ' + esc(x.clean.topic) : ''}</div></td>
