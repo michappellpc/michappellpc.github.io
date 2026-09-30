@@ -332,3 +332,5 @@ a.statlink{text-decoration:none;color:inherit;display:block}a.statlink:hover{bor
 .opt .pick{margin-left:auto;flex:none;font-size:.85rem;font-weight:600;color:var(--muted);padding-left:10px}
 .opt .pickbar{position:absolute;left:0;bottom:0;height:4px;background:var(--gold);opacity:.75;border-radius:0 2px 2px 0}
 .opt.correct .pickbar{background:var(--good)}.opt.wrong .pickbar{background:var(--bad)}
+
+label.chk .cnt{color:var(--muted);font-variant-numeric:tabular-nums}label.chk.zero{color:var(--muted)}

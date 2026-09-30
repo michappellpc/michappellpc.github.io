@@ -196,9 +196,9 @@ function flaggedPage() {
 // ---------- create test ----------
 function create(preSubject) {
   pageTitle('New test');
-  const boardBoxes = bank.boards.map(b => `<label class="chk"><input type="checkbox" name="board" value="${b.id}" checked> ${esc(b.name)}</label>`).join('');
+  const boardBoxes = bank.boards.map(b => `<label class="chk"><input type="checkbox" name="board" value="${b.id}" checked> ${esc(b.name)} <span class="cnt" data-cnt="board:${b.id}"></span></label>`).join('');
   const subjects = [...new Set(Object.values(bank.subjects).flat())];
-  const subjBoxes = subjects.map(s => `<label class="chk"><input type="checkbox" name="subj" value="${esc(s)}" checked> ${esc(s)}</label>`).join('');
+  const subjBoxes = subjects.map(s => `<label class="chk"><input type="checkbox" name="subj" value="${esc(s)}" checked> ${esc(s)} <span class="cnt" data-cnt="subj:${esc(s)}"></span></label>`).join('');
   $app.innerHTML = `<div class="card"><h2>New test</h2><form id="f">
     <fieldset><legend>Mode</legend>
       <label class="chk"><input type="radio" name="mode" value="tutor" checked> Tutor (feedback after each question)</label>
@@ -206,7 +206,7 @@ function create(preSubject) {
     <fieldset><legend>Board</legend>${boardBoxes}</fieldset>
     <fieldset><legend>Subjects</legend><div class="row"><button type="button" id="all">All</button><button type="button" id="none">None</button></div>${subjBoxes}</fieldset>
     <fieldset><legend>Question status</legend>
-      ${[['unused', 'Unused'], ['incorrect', 'Previously incorrect'], ['flagged', 'Flagged'], ['all', 'All']].map(([v, l], i) => `<label class="chk"><input type="checkbox" name="status" value="${v}" ${i == 0 ? 'checked' : ''}> ${l}</label>`).join('')}</fieldset>
+      ${[['unused', 'Unused'], ['incorrect', 'Previously incorrect'], ['flagged', 'Flagged'], ['all', 'All']].map(([v, l], i) => `<label class="chk"><input type="checkbox" name="status" value="${v}" ${i == 0 ? 'checked' : ''}> ${l} <span class="cnt" data-cnt="status:${v}"></span></label>`).join('')}</fieldset>
     <p><label for="n">Number of questions</label> <input type="number" id="n" min="1" value="20"> <span class="muted" id="avail" aria-live="polite"></span></p>
     <button class="primary" id="go">Start test</button></form></div>`;
   const f = document.getElementById('f');
@@ -215,17 +215,31 @@ function create(preSubject) {
     f.querySelectorAll('[name=subj]').forEach(e => { e.checked = e.value === want; });
   }
   const vals = n => [...f.querySelectorAll(`[name=${n}]:checked`)].map(e => e.value);
-  const pool = () => {
-    const bs = vals('board'), ss = vals('subj'), stt = vals('status');
-    return bank.questions.filter(q => {
-      if (isDraft(q) && !showDrafts()) return false;
-      if (!q.boards.some(b => bs.includes(b)) || !ss.includes(q.subject)) return false;
+  // Does a question fit the current choices? Anything passed as null is left out of the check, so each checkbox
+  // can show how many questions would apply to it given everything else that is selected.
+  const fits = (q, bs, ss, stt) => {
+    if (isDraft(q) && !showDrafts()) return false;
+    if (bs && !q.boards.some(b => bs.includes(b))) return false;
+    if (ss && !ss.includes(q.subject)) return false;
+    if (stt) {
       if (stt.includes('all')) return true;
       const s = Store.qstat(q.id);
       return (stt.includes('unused') && (!s || !s.seen)) || (stt.includes('incorrect') && s && s.last === 'w') || (stt.includes('flagged') && s && s.flagged);
+    }
+    return true;
+  };
+  const pool = () => { const bs = vals('board'), ss = vals('subj'), stt = vals('status'); return bank.questions.filter(q => fits(q, bs, ss, stt)); };
+  const upd = () => {
+    const p = pool().length, bs = vals('board'), ss = vals('subj'), stt = vals('status');
+    document.getElementById('avail').textContent = `(${p} available)`; document.getElementById('go').disabled = !p;
+    f.querySelectorAll('[data-cnt]').forEach(span => {
+      const [kind, key] = span.dataset.cnt.split(/:(.*)/s);
+      const n = bank.questions.filter(q => kind === 'board' ? q.boards.includes(key) && fits(q, null, ss, stt)
+        : kind === 'subj' ? q.subject === key && fits(q, bs, null, stt)
+        : fits(q, bs, ss, [key])).length;
+      span.textContent = `(${n})`; span.closest('label').classList.toggle('zero', n === 0);
     });
   };
-  const upd = () => { const p = pool().length; document.getElementById('avail').textContent = `(${p} available)`; document.getElementById('go').disabled = !p; };
   f.addEventListener('change', upd); upd();
   document.getElementById('all').onclick = () => { f.querySelectorAll('[name=subj]').forEach(e => e.checked = true); upd(); };
   document.getElementById('none').onclick = () => { f.querySelectorAll('[name=subj]').forEach(e => e.checked = false); upd(); };
