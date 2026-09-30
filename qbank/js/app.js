@@ -17,12 +17,25 @@ function applyTheme() {
 }
 
 async function load() {
+  if (window.__QBANK_DATA) { const m = window.__QBANK_DATA; bank.boards = m.boards; bank.subjects = m.subjects; bank.questions = m.questions; bank.byId = Object.fromEntries(bank.questions.map(q => [q.id, q])); return; }
   const base = 'data/';
   const m = await (await fetch(base + 'manifest.json')).json();
   const lists = await Promise.all(m.files.map(f => fetch(base + f).then(r => r.json())));
   bank.boards = m.boards; bank.subjects = m.subjects;
   bank.questions = lists.flat();
   bank.byId = Object.fromEntries(bank.questions.map(q => [q.id, q]));
+}
+
+// in-page dialog (native confirm/alert are blocked in some embedded viewers)
+function ask(msg, yes = 'OK', no = 'Cancel') {
+  return new Promise(res => {
+    const d = document.createElement('div'); d.className = 'modal';
+    d.innerHTML = `<div class="card" role="dialog" aria-modal="true"><p>${esc(msg)}</p><div class="row"><button class="primary" data-y>${esc(yes)}</button>${no ? `<button data-n>${esc(no)}</button>` : ''}</div></div>`;
+    const done = v => { d.remove(); res(v); };
+    d.querySelector('[data-y]').onclick = () => done(true);
+    const n = d.querySelector('[data-n]'); if (n) n.onclick = () => done(false);
+    document.body.appendChild(d); d.querySelector('[data-y]').focus();
+  });
 }
 
 // ---------- router ----------
@@ -148,7 +161,7 @@ function renderTest() {
 function elapsed(t) { return t.elapsed + (Date.now() - t.started) / 1000; }
 function startTimer(t) {
   $timer.hidden = false;
-  const u = () => { const left = t.limit - elapsed(t); $timer.textContent = '⏱ ' + fmt(left); if (left <= 0) { clearInterval(tick); finish(true); } };
+  const u = () => { const left = t.limit - elapsed(t); $timer.textContent = '⏱ ' + fmt(left); if (left <= 0) { clearInterval(tick); finish(); } };
   u(); tick = setInterval(u, 500);
 }
 function persist(t) { t.elapsed = elapsed(t); t.started = Date.now(); Store.save(); }
@@ -167,7 +180,7 @@ function bindTest(t, q) {
   const on = (i, fn) => { const e = document.getElementById(i); if (e) e.onclick = fn; };
   on('prev', () => go(t.idx - 1)); on('next', () => go(t.idx + 1));
   on('submit', submit); on('flag', () => { Store.toggleFlag(id); renderTest(); });
-  on('end', () => { if (confirm('End this test now? Unanswered questions count as incorrect.')) finish(false); });
+  on('end', async () => { if (await ask('End this test now? Unanswered questions count as incorrect.', 'End test')) finish(); });
   document.getElementById('note').onchange = e => Store.setNote(id, e.target.value);
   function submit() {
     if (!t.answers[id] || t.revealed[id]) return;
@@ -245,9 +258,9 @@ function settings() {
   };
   document.getElementById('imp').onclick = () => document.getElementById('file').click();
   document.getElementById('file').onchange = async e => {
-    try { Store.importJSON(await e.target.files[0].text()); applyTheme(); alert('Imported.'); location.hash = '#/'; } catch (err) { alert('Import failed: ' + err.message); }
+    try { Store.importJSON(await e.target.files[0].text()); applyTheme(); await ask('Progress imported.', 'OK', null); location.hash = '#/'; } catch (err) { ask('Import failed: ' + err.message, 'OK', null); }
   };
-  document.getElementById('reset').onclick = () => { if (confirm('Delete ALL progress? This cannot be undone.')) { Store.reset(); location.hash = '#/'; route(); } };
+  document.getElementById('reset').onclick = async () => { if (await ask('Delete ALL progress? This cannot be undone.', 'Delete everything')) { Store.reset(); location.hash = '#/'; route(); } };
 }
 
 // ---------- boot ----------
