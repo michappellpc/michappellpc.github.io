@@ -1,6 +1,6 @@
 # Turning on private accounts
 
-This switches Ram QBank from "anyone with the link can use it" to **invitation-only, with a private question bank**:
+This switches RAMQBank from "anyone with the link can use it" to **invitation-only, with a private question bank**:
 
 - Only people whose email you approve can sign in.
 - The questions live in a private database. They are not in this public repository and are only sent to approved, signed-in people.
@@ -16,7 +16,7 @@ You need: a computer, an email address for your Supabase account, and (for step 
 ## 1. Create the database project
 
 1. Go to **supabase.com** and sign up (free).
-2. Click **New project**. Name it `ram-qbank`. Choose the region closest to your residents.
+2. Click **New project**. Name it `ramqbank`. Choose the region closest to your residents.
 3. Make up a **database password** and save it in a password manager. You will rarely need it.
 4. Wait a couple of minutes while it sets up.
 

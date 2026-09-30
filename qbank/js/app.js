@@ -28,7 +28,7 @@ async function hydrateImages() {
   }
 }
 function labelScrolls() { $app.querySelectorAll('.scroll').forEach(b => { const h = b.closest('.card') && b.closest('.card').querySelector('h2,h3'); b.setAttribute('aria-label', (h ? h.textContent : 'Data') + ' table'); }); }
-function pageTitle(t) { const h = document.getElementById('page-title'); if (h) h.textContent = t; document.title = t + ' | Ram QBank'; }
+function pageTitle(t) { const h = document.getElementById('page-title'); if (h) h.textContent = t; document.title = t + ' | RAMQBank'; }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function applyTheme() {
@@ -538,7 +538,7 @@ async function adminPage() {
     document.getElementById('csv').onclick = () => {
       const rows = [['email', 'role', 'plan', 'approved', 'answered', 'correct', 'percent_correct', 'last_active'], ...mem.map(m => [m.email, m.role, m.plan, m.active ? 'yes' : 'no', m.attempts, m.correct, m.attempts ? pct(m.correct, m.attempts) : '', m.last_active || ''])];
       const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob(['\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv' }));
-      link.download = 'ram-qbank-members-' + new Date().toISOString().slice(0, 10) + '.csv'; link.click();
+      link.download = 'ramqbank-members-' + new Date().toISOString().slice(0, 10) + '.csv'; link.click();
     };
     document.getElementById('addem').onsubmit = async e => {
       e.preventDefault(); say('');

@@ -1,4 +1,4 @@
-# Adding questions to Ram QBank
+# Adding questions to RAMQBank
 
 ## Where the questions live
 

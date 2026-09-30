@@ -7,7 +7,7 @@ const css = r('css/style.css').replace(/url\(\.\.\/fonts\/([^)]+)\)/g, (m, f) =>
 const safe = s => s.replace(/<\/script/gi, '<\\/script');
 const html = r('index.html');
 const body = html.match(/<body>([\s\S]*?)<script src/)[1];
-const out = `<title>Ram QBank</title>\n<style>\n${css}\nbody{padding-inline:0}\n</style>\n${body}
+const out = `<title>RAMQBank</title>\n<style>\n${css}\nbody{padding-inline:0}\n</style>\n${body}
 <script>window.__QBANK_DATA=${safe(JSON.stringify(data))};</script>
 <script>\n${safe(r('js/store.js'))}\n</script>
 <script>\n${safe(r('js/cloud.js'))}\n</script>

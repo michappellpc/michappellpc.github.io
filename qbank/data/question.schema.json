@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Ram QBank question file",
+  "title": "RAMQBank question file",
   "description": "A JSON array of questions. tools/validate.js enforces extra rules (subject must belong to the board, no duplicate stems, image files must exist).",
   "type": "array",
   "items": {

@@ -1,4 +1,4 @@
-# Board Prep QBank
+# RAMQBank
 
 Static question bank for Aerospace, Occupational, and Preventive Medicine boards. Runs on GitHub Pages at `/qbank/` — no backend. Progress is saved in the browser (export/import from Settings).
 
