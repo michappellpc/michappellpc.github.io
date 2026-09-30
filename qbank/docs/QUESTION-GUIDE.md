@@ -1,0 +1,122 @@
+# Adding questions to Ram QBank
+
+## The workflow
+
+1. **Draft** questions with Fable (prompt below), or write them yourselves.
+2. **Save** the JSON it returns as `data/questions/<name>.json`.
+3. **Check** it: `node tools/validate.js` (also runs automatically on GitHub for every push).
+4. **List** the file in `data/manifest.json` under `files` (the importer can do this with `--add`).
+5. **Review** every question with a physician (see "Review" below), then mark it `reviewed`.
+
+Everything a model writes starts as `"status": "draft"`. Draft questions show an amber **Draft** tag in the app, and any user can hide them under Settings. Only a physician reviewer should change a question to `reviewed`.
+
+## Rules that keep the bank trustworthy
+
+- **Nobody should trust an AI-written medical fact until a physician has checked it.** Models write plausible, confident, wrong answers, and they invent references. Check the answer, the explanation, and that every reference exists.
+- **Write original questions.** Do not paste in or ask a model to reproduce real board exam items, or questions from commercial banks. Exam candidates agree not to share exam content, and copying a competitor's bank is a copyright problem.
+- **No patient information.** Vignettes must be invented composites. Nothing from a real chart, and nothing controlled or sensitive from a real unit or mission.
+- Give it the **official content outline** for each board (paste it into the prompt) so questions cover what is actually tested.
+
+## Prompt for Fable
+
+Paste this, fill in the bracketed parts, and attach or paste the content outline.
+
+````text
+You are helping write practice questions for physician residents studying for the
+[American Board of Preventive Medicine: Aerospace Medicine / Occupational Medicine /
+Public Health & General Preventive Medicine] certification exam.
+
+Write [20] ORIGINAL multiple-choice questions on: [subject, e.g. "Altitude &
+Decompression"], covering these topics from the content outline: [paste topics].
+Do not reproduce or paraphrase real exam questions or questions from commercial
+question banks.
+
+Question style
+- Board-style clinical or operational vignette, 3-6 sentences, ending in one clear question.
+- Single best answer. 4 or 5 options (A-D or A-E). Plausible distractors that reflect real misconceptions.
+- No "all of the above" / "none of the above". No negative stems ("which is NOT").
+- Vary the correct letter across the set. Vary difficulty (1 easy, 2 medium, 3 hard).
+- All patients and cases are invented. No real patient details.
+- Use standard units and values. Only state numbers you are certain of; if unsure, rewrite the question so it does not depend on the number.
+
+For each question also write
+- "explanation": why the correct answer is right, with the teaching point (2-5 sentences).
+- "optionNotes": one sentence for EVERY option saying why it is right or wrong.
+- "references": 1-3 real, checkable sources (textbook and chapter, guideline, regulation section). If you are not certain a source exists, leave references empty rather than guessing.
+
+Output ONLY a JSON array, no commentary, matching this shape exactly:
+
+[
+  {
+    "id": "aem-altitude-001",
+    "status": "draft",
+    "boards": ["aem"],
+    "subject": "Altitude & Decompression",
+    "topic": "Hypoxia",
+    "difficulty": 2,
+    "stem": "...",
+    "options": [
+      { "id": "A", "text": "..." },
+      { "id": "B", "text": "..." },
+      { "id": "C", "text": "..." },
+      { "id": "D", "text": "..." }
+    ],
+    "answer": "A",
+    "explanation": "...",
+    "optionNotes": { "A": "...", "B": "...", "C": "...", "D": "..." },
+    "references": ["..."]
+  }
+]
+
+Rules for the fields
+- "status" must always be "draft".
+- "boards" uses: "aem" (Aerospace Medicine), "om" (Occupational Medicine), "pm" (General Preventive Medicine & Public Health). A question can list more than one.
+- "subject" must be EXACTLY one of the subjects listed for that board in data/manifest.json:
+[paste the subject list for the board]
+- "id" is lowercase letters, digits and hyphens, unique, numbered in order.
+````
+
+The exact schema is in `data/question.schema.json` if you want to give it to the model as well.
+
+## Review
+
+Physician reviewers work best in a spreadsheet:
+
+```bash
+node tools/export-csv.js data/questions/aem-altitude.json > review.csv   # open in Excel or Google Sheets
+```
+
+Reviewers fix wording and answers, then set `status` to `reviewed` and put their initials in `reviewedBy` for each question they approve. Save as CSV, then:
+
+```bash
+node tools/import-csv.js review.csv --out data/questions/aem-altitude.json
+node tools/validate.js
+```
+
+Ids are kept, so re-importing replaces the old version of the same file. Anything not approved stays `draft`.
+
+## Starting from a spreadsheet instead
+
+`docs/question-template.csv` has every column with an example row. Fill it in (use `|` to separate several boards or references), save as CSV, then:
+
+```bash
+node tools/import-csv.js my-questions.csv --prefix aem-altitude --add
+node tools/validate.js
+```
+
+`--add` lists the new file in the manifest. `--prefix` sets the ids for rows that have none.
+
+## Images
+
+Put image files in `images/` (PNG or JPEG, ideally under 300 KB each so the app stays fast offline) and reference them in the question:
+
+```json
+"image": "images/audiogram-01.png",
+"imageAlt": "Audiogram: bilateral notch at 4 kHz, worse in the left ear"
+```
+
+`imageAlt` is required (the validator enforces it). It is the text description for screen readers, and shows if the image fails to load. Tapping an image in the app enlarges it. Only use images you created or have the right to use.
+
+## Validation
+
+`node tools/validate.js` fails on real problems (duplicate ids or stems, an answer that isn't an option, a subject that doesn't belong to the board, missing image files). It only warns about things like missing references or per-option notes. Add `--strict` to make warnings fail too, and `--summary` for counts by board, subject, status and answer letter.

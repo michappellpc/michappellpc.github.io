@@ -1,0 +1,4 @@
+[{"id":"zz-img-001","status":"reviewed","reviewedBy":"TEST","boards":["om"],"subject":"Hearing Conservation & Noise","topic":"Audiometry","difficulty":2,
+"stem":"TEST: Which pattern is shown?","image":"images/zz-test.png","imageAlt":"Test image description",
+"options":[{"id":"A","text":"Alpha"},{"id":"B","text":"Bravo"},{"id":"C","text":"Charlie"}],"answer":"B","explanation":"Because bravo.",
+"optionNotes":{"A":"Alpha is wrong because A.","B":"Bravo is right.","C":"Charlie is wrong because C."},"references":["Test ref"]}]

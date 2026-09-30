@@ -9,6 +9,9 @@ const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
 const fmt = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s % 60).padStart(2, '0'); };
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const boardName = id => (bank.boards.find(b => b.id === id) || {}).name || id;
+const isDraft = q => q.status !== 'reviewed';
+const showDrafts = () => Store.data.settings.showDrafts !== false;
+const notesText = q => q.optionNotes ? '\n\nAnswer choices:\n' + q.options.filter(o => q.optionNotes[o.id]).map(o => esc(`${o.id}. ${q.optionNotes[o.id]}`)).join('\n') : '';
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function applyTheme() {
@@ -26,6 +29,14 @@ async function load() {
   bank.byId = Object.fromEntries(bank.questions.map(q => [q.id, q]));
 }
 
+function zoomImage(src, alt) {
+  const d = document.createElement('div'); d.className = 'modal zoom';
+  d.innerHTML = `<div class="card"><img src="${esc(src)}" alt="${esc(alt)}"><div class="row spread"><span class="muted">${esc(alt)}</span><button class="primary">Close</button></div></div>`;
+  d.onclick = e => { if (e.target === d || e.target.tagName === 'BUTTON') d.remove(); };
+  document.body.appendChild(d);
+}
+const bindZoom = () => $app.querySelectorAll('[data-zoom]').forEach(im => im.onclick = () => zoomImage(im.src, im.alt));
+
 // in-page dialog (native confirm/alert are blocked in some embedded viewers)
 function ask(msg, yes = 'OK', no = 'Cancel') {
   return new Promise(res => {
@@ -42,6 +53,7 @@ function ask(msg, yes = 'OK', no = 'Cancel') {
 function route() {
   clearInterval(tick); $timer.hidden = true; Mascot.stop();
   const [p, arg] = location.hash.replace(/^#\/?/, '').split('/');
+  document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href') === '#/' + (p === 'test' ? 'create' : p === 'results' || p === 'review' ? 'history' : p)));
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
   ({ '': dashboard, create, history, settings, results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
@@ -109,6 +121,7 @@ function create() {
   const pool = () => {
     const bs = vals('board'), ss = vals('subj'), stt = vals('status');
     return bank.questions.filter(q => {
+      if (isDraft(q) && !showDrafts()) return false;
       if (!q.boards.some(b => bs.includes(b)) || !ss.includes(q.subject)) return false;
       if (stt.includes('all')) return true;
       const s = Store.qstat(q.id);
@@ -146,17 +159,17 @@ function renderTest() {
   }).join('');
   $app.innerHTML = `
   <div class="card">
-    <div class="row spread"><div>${q.boards.map(b => `<span class="tag">${esc(boardName(b))}</span>`).join('')}<span class="muted">${esc(q.subject)}${q.topic && shown ? ' · ' + esc(q.topic) : ''}</span></div>
+    <div class="row spread"><div>${q.boards.map(b => `<span class="tag">${esc(boardName(b))}</span>`).join('')}${isDraft(q) ? '<span class="tag draft" title="Not yet reviewed by a physician">Draft</span>' : ''}<span class="muted">${esc(q.subject)}${q.topic && shown ? ' · ' + esc(q.topic) : ''}</span></div>
       <div class="muted">Question ${t.idx + 1} of ${t.qids.length}</div></div>
     <p class="stem">${esc(q.stem)}</p>
-    ${q.image ? `<img src="${esc(q.image)}" alt="" style="max-width:100%">` : ''}
+    ${q.image ? `<img class="qimg" data-zoom src="${esc(q.image)}" alt="${esc(q.imageAlt || '')}" title="Tap to enlarge">` : ''}
     <div id="opts">${q.options.map((o, i) => {
       let c = 'opt'; if (sel === o.id) c += ' sel'; if (struck.includes(o.id)) c += ' struck';
       if (shown) { if (o.id === q.answer) c += ' correct'; else if (sel === o.id) c += ' wrong'; }
       return `<div class="${c}" data-opt="${esc(o.id)}" role="button" tabindex="0"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}</span>
         ${shown ? '' : `<button class="x" data-strike="${esc(o.id)}" title="Cross out">✕</button>`}</div>`;
     }).join('')}</div>
-    ${shown ? `<div class="expl"><b>${sel === q.answer ? 'Correct' : 'Incorrect'}.</b> Correct answer: ${esc(q.answer)}.\n\n${esc(q.explanation)}${q.references && q.references.length ? `\n\n<span class="muted">References: ${q.references.map(esc).join('; ')}</span>` : ''}</div>` : ''}
+    ${shown ? `<div class="expl"><b>${sel === q.answer ? 'Correct' : 'Incorrect'}.</b> Correct answer: ${esc(q.answer)}.\n\n${esc(q.explanation)}${notesText(q)}${q.references && q.references.length ? `\n\n<span class="muted">References: ${q.references.map(esc).join('; ')}</span>` : ''}</div>` : ''}
     <div class="row" style="margin-top:14px">
       ${tutor && !shown ? `<button class="primary" id="submit" ${sel ? '' : 'disabled'}>Submit</button>` : ''}
       <button id="prev" ${t.idx ? '' : 'disabled'}>← Prev</button>
@@ -198,6 +211,7 @@ function bindTest(t, q) {
   $app.querySelectorAll('[data-strike]').forEach(b => b.onclick = e => {
     e.stopPropagation(); const a = t.struck[id] ||= [], k = b.dataset.strike, i = a.indexOf(k); i < 0 ? a.push(k) : a.splice(i, 1); persist(t); renderTest();
   });
+  bindZoom();
   $app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(+b.dataset.go));
   const on = (i, fn) => { const e = document.getElementById(i); if (e) e.onclick = fn; };
   on('prev', () => go(t.idx - 1)); on('next', () => go(t.idx + 1));
@@ -258,8 +272,10 @@ function review(id) {
     return `<div class="card"><div class="muted">${i + 1}. ${esc(q.subject)} · ${esc(q.topic || '')} — <b style="color:var(--${ok ? 'good' : 'bad'})">${ok ? 'Correct' : mine ? 'Incorrect' : 'Unanswered'}</b></div>
       <p class="stem">${esc(q.stem)}</p>
       ${q.options.map(o => `<div class="opt ${o.id === q.answer ? 'correct' : o.id === mine ? 'wrong' : ''}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}</span></div>`).join('')}
-      <div class="expl">${esc(q.explanation)}</div></div>`;
+      ${q.image ? `<img class="qimg" data-zoom src="${esc(q.image)}" alt="${esc(q.imageAlt || '')}" title="Tap to enlarge">` : ''}
+      <div class="expl">${esc(q.explanation)}${notesText(q)}</div></div>`;
   }).join('');
+  bindZoom();
 }
 
 function history() {
@@ -272,9 +288,11 @@ function history() {
 function settings() {
   const th = Store.data.settings.theme;
   $app.innerHTML = `<div class="card"><h2>Settings</h2>
-    <p>Theme <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p></div>
+    <p>Theme <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
+    <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label></div>
     <div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
     <div class="row"><button id="exp">Export progress</button><button id="imp">Import progress</button><input type="file" id="file" accept="application/json" hidden><button class="danger" id="reset">Reset all progress</button></div></div>`;
+  document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.save(); };
   document.getElementById('theme').onchange = e => { Store.data.settings.theme = e.target.value; Store.save(); applyTheme(); };
   document.getElementById('exp').onclick = () => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([Store.exportJSON()], { type: 'application/json' }));
@@ -290,3 +308,4 @@ function settings() {
 // ---------- boot ----------
 applyTheme();
 load().then(route).catch(e => { $app.innerHTML = `<div class="card"><b>Could not load question data.</b><p class="muted">${esc(e.message)}. If you opened this file directly, serve it over http (e.g. <code>python3 -m http.server</code>) or use GitHub Pages.</p></div>`; });
+if ('serviceWorker' in navigator && !window.__QBANK_DATA && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -3,10 +3,11 @@
 const fs = require('fs'), path = require('path'), r = p => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 const man = JSON.parse(r('data/manifest.json'));
 const data = { boards: man.boards, subjects: man.subjects, questions: man.files.flatMap(f => JSON.parse(r('data/' + f))) };
+const css = r('css/style.css').replace(/url\(\.\.\/fonts\/([^)]+)\)/g, (m, f) => `url(data:font/woff2;base64,${fs.readFileSync(path.join(__dirname, '..', 'fonts', f)).toString('base64')})`);
 const safe = s => s.replace(/<\/script/gi, '<\\/script');
 const html = r('index.html');
 const body = html.match(/<body>([\s\S]*?)<script src/)[1];
-const out = `<title>Ram QBank</title>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Stardos+Stencil:wght@400;700&display=swap">\n<style>\n${r('css/style.css')}\nbody{padding-inline:0}\n</style>\n${body}
+const out = `<title>Ram QBank</title>\n<style>\n${css}\nbody{padding-inline:0}\n</style>\n${body}
 <script>window.__QBANK_DATA=${safe(JSON.stringify(data))};</script>
 <script>\n${safe(r('js/store.js'))}\n</script>
 <script>\n${safe(r('js/mascot.js'))}\n</script>\n<script>\n${safe(r('js/app.js'))}\n</script>\n`;
