@@ -100,8 +100,10 @@ create table if not exists public.attempts (          -- one row per answered qu
   ok          boolean not null,
   client_id   text not null,                            -- makes retries harmless
   at          timestamptz not null default now(),
+  chosen      text check (chosen is null or char_length(chosen) between 1 and 3),   -- which option was picked (older rows have none)
   unique (user_id, client_id)
 );
+alter table public.attempts add column if not exists chosen text check (chosen is null or char_length(chosen) between 1 and 3);
 create index if not exists attempts_question_idx on public.attempts (question_id);
 create index if not exists attempts_user_idx on public.attempts (user_id, at);
 
@@ -521,6 +523,39 @@ begin
   group by f.qid having count(*) >= public.peer_min_users();
 end $$;
 
+-- Which options members picked (shown as percentages after answering). Same rules as the group averages: first tries only,
+-- and nothing is released until at least the minimum number of members have a recorded pick for that question.
+create or replace function public.peer_choices() returns table (question_id text, chosen text, picks int, total int)
+  language plpgsql stable security definer set search_path = public as
+$$
+begin
+  if not public.is_active() then return; end if;
+  return query
+  with first_try as (
+    select distinct on (a.user_id, a.question_id) a.user_id, a.question_id as qid, a.chosen
+    from public.attempts a join public.profiles p on p.id = a.user_id and p.active
+    order by a.user_id, a.question_id, a.at, a.id
+  ), counted as (
+    select f.qid, f.chosen as pick, count(*)::int as n, sum(count(*)) over (partition by f.qid)::int as tot
+    from first_try f join public.questions q on q.id = f.qid
+    where f.chosen is not null and not q.archived and q.status = 'reviewed' and public.has_plan(q.tier)
+    group by f.qid, f.chosen
+  )
+  select c.qid, c.pick, c.n, c.tot from counted c where c.tot >= public.peer_min_users();
+end $$;
+
+-- If a question's answer choices are rewritten, earlier picks no longer describe the same options, so they are cleared.
+create or replace function public.questions_options_changed() returns trigger
+  language plpgsql security definer set search_path = public as
+$$
+begin
+  if new.options is distinct from old.options then update public.attempts set chosen = null where question_id = new.id and chosen is not null; end if;
+  return new;
+end $$;
+drop trigger if exists questions_options_changed on public.questions;
+create trigger questions_options_changed after update of options on public.questions
+  for each row execute function public.questions_options_changed();
+
 revoke execute on all functions in schema public from public, anon;
 grant execute on function public.is_active(), public.is_admin(), public.can_edit(), public.has_plan(text) to authenticated;
 grant execute on function public.my_progress(), public.touch_seen(), public.reset_my_progress() to authenticated;
@@ -529,6 +564,6 @@ grant execute on function public.signup_open() to anon, authenticated;
 grant execute on function public.program_list() to anon, authenticated;
 grant execute on function public.my_program(), public.leave_program(), public.faculty_program_id(), public.faculty_roster(), public.faculty_subject_stats() to authenticated;
 grant execute on function public.request_program(text), public.faculty_decide(uuid, boolean), public.faculty_remove(uuid) to authenticated;
-grant execute on function public.peer_stats(), public.peer_min_users() to authenticated;
+grant execute on function public.peer_stats(), public.peer_choices(), public.peer_min_users() to authenticated;
 grant execute on function public.set_peer_min_users(int) to authenticated;
 grant execute on function public.set_signup_open(boolean) to authenticated;

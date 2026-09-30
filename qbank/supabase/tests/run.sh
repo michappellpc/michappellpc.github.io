@@ -347,4 +347,21 @@ eq  "staff cannot request a program themselves"         "yes" "$(as admin "selec
 eq  "only an admin can manage programs"                 "yes" "$(as a "insert into programs (id, name) values ('x1','Xray');" 2>&1 | grep -q 'row-level security' && echo yes)"
 eq  "an admin can add a program"                        "prog-three" "$(as admin "insert into programs (id, name) values ('prog-three','Program Three') returning id;")"
 eq  "the admin summary shows program and status"        "prog-one,approved" "$(as admin "select program_id||','||program_status from admin_member_summary() where email='res1@site.com';")"
+echo; echo "Answer choices picked"
+root "update attempts set chosen = case when client_id in ('p1','p2','p3','p4','p5','p6','p7','p8') then 'A' when client_id in ('p9','p10') then 'B' else 'C' end where question_id = 'q-free' and client_id like 'p%' and client_id <> 'p9b';
+  update attempts set chosen = 'A' where client_id = 'p9b';
+  insert into questions (id, boards, subject, stem, options, answer, explanation, tier, status) values ('q-opt','{aem}','S','opt stem','[{\"id\":\"A\",\"text\":\"x\"},{\"id\":\"B\",\"text\":\"y\"}]','A','why','free','reviewed');
+  insert into attempts (user_id, question_id, ok, client_id, chosen) select ('00000000-0000-0000-0001-' || lpad(g::text, 12, '0'))::uuid, 'q-opt', g <= 6, 'o' || g, case when g <= 6 then 'A' else 'B' end from generate_series(1, 12) g;" >/dev/null
+eq  "a member sees how many picked each option"      "A=8,B=2,C=2" "$(as a "select string_agg(chosen||'='||picks, ',' order by chosen) from peer_choices() where question_id='q-free';")"
+eq  "the total counts only people with a recorded first pick" "12" "$(as a "select distinct total from peer_choices() where question_id='q-free';")"
+eq  "a question with too few people shows nothing"   "0" "$(as a "select count(*) from peer_choices() where question_id='q-pro';")"
+eq  "an unlisted person gets nothing"                "0" "$(as c "select count(*) from peer_choices();")"
+eq  "anonymous visitors cannot call it"              "yes" "$(as anon "select * from peer_choices();" 2>&1 | grep -q 'permission denied' && echo yes)"
+eq  "a free member sees free questions only"         "q-free,q-opt" "$(as d "select string_agg(distinct question_id, ',' order by question_id) from peer_choices();")"
+eq  "a later try does not replace the first pick"    "B" "$(as a "select chosen from peer_choices() where question_id='q-free' and chosen='B';")"
+eq  "editing only the explanation keeps the picks"   "12" "$(root "update questions set explanation = 'better wording' where id = 'q-opt'; select count(*) from attempts where question_id = 'q-opt' and chosen is not null;")"
+eq  "rewriting the answer choices clears the picks"  "0" "$(root "update questions set options = '[{\"id\":\"A\",\"text\":\"new x\"},{\"id\":\"B\",\"text\":\"new y\"}]' where id = 'q-opt'; select count(*) from attempts where question_id = 'q-opt' and chosen is not null;")"
+eq  "so nothing is shown for it any more"            "0" "$(as a "select count(*) from peer_choices() where question_id='q-opt';")"
+eq  "scores are untouched by clearing the picks"     "12" "$(root "select count(*) from attempts where question_id = 'q-opt';")"
+eq  "a pick cannot be longer than 3 characters"      "yes" "$(root "insert into attempts (user_id, question_id, ok, client_id, chosen) values ('00000000-0000-0000-0001-000000000001','q-opt',true,'zz','ABCDE');" 2>&1 | grep -q 'violates check' && echo yes)"
 echo; echo "$PASS passed, $FAIL failed"; [[ $FAIL -eq 0 ]]
