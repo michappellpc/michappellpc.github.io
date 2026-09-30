@@ -1,37 +1,44 @@
 // Mascot "Pulse", a flat vector ram, plus the dashboard cover artwork. Poses: idle, blink, happy, cheer, sad.
 const Mascot = (() => {
-  const INK = '#2f3a17', WOOL = '#f6f1e4', WOOLSH = '#e2dac3', FACE = '#e9d2ab', MUZ = '#f7ead2', HORN = '#c9992b', HORNDK = '#8f6b12';
-  const horn = `<path d="M43 44 C21 35 7 58 19 75 C28 86 46 81 45 68 C44 60 34 59 32 65" fill="none" stroke="${INK}" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M43 44 C21 35 7 58 19 75 C28 86 46 81 45 68 C44 60 34 59 32 65" fill="none" stroke="${HORN}" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M40 43 C22 37 12 58 22 71" fill="none" stroke="${HORNDK}" stroke-width="2" stroke-linecap="round" opacity=".55"/>
-    <path d="M37 48 C25 45 19 57 25 66" fill="none" stroke="${HORNDK}" stroke-width="1.6" stroke-linecap="round" opacity=".45"/>`;
-  const wool = (cx, cy, r) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${WOOL}" stroke="${INK}" stroke-width="2.4"/>`;
+  const INK = '#26301a', WOOL = '#f7f3e8', WOOLSH = '#dcd3ba', HORNDK = '#7d5c10';
+  // One curled horn built from three stroked segments that get thinner toward the tip; the right horn is its mirror image.
+  const SEG = [['M54 46 C30 32 8 48 10 76', 15], ['M10 76 C12 102 38 110 54 97', 12], ['M54 97 C63 89 57 79 48 82', 8.5]];
+  const horn = `<g fill="none" stroke-linecap="round" stroke-linejoin="round">${SEG.map(([d, w]) => `<path d="${d}" stroke="${INK}" stroke-width="${w + 5}"/>`).join('')}
+    ${SEG.map(([d, w]) => `<path d="${d}" stroke="url(#mh)" stroke-width="${w}"/>`).join('')}
+    <path d="M52 41 C31 30 14 44 15 68" stroke="#f0cf78" stroke-width="2.2" opacity=".7"/>
+    <g stroke="${HORNDK}" stroke-width="1.8" opacity=".55"><path d="M40 38 L38 53"/><path d="M26 40 L27 54"/><path d="M15 55 L27 60"/><path d="M12 82 L24 79"/><path d="M27 100 L31 90"/><path d="M42 104 L43 93"/></g></g>`;
   function eyes(p) {
-    if (p === 'blink') return `<path d="M45 63h10M65 63h10" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/>`;
-    if (p === 'happy' || p === 'cheer') return `<path d="M45 65 Q50 57 55 65M65 65 Q70 57 75 65" fill="none" stroke="${INK}" stroke-width="3" stroke-linecap="round"/>`;
-    const brow = p === 'sad' ? `<path d="M44 55 L55 58M76 55 L65 58" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/>` : '';
-    return `${brow}<circle cx="50" cy="63" r="4.6" fill="${INK}"/><circle cx="70" cy="63" r="4.6" fill="${INK}"/><circle cx="51.6" cy="61.4" r="1.5" fill="#fff"/><circle cx="71.6" cy="61.4" r="1.5" fill="#fff"/>`;
+    const lid = (x, m) => `<path d="M${x - 8 * m} 68 Q${x} 61 ${x + 8 * m} 67" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/>`;
+    if (p === 'blink') return `<path d="M43 68 Q51 71 59 68M81 68 Q89 71 97 68" fill="none" stroke="${INK}" stroke-width="2.8" stroke-linecap="round"/>`;
+    if (p === 'happy' || p === 'cheer') return `<path d="M43 69 Q51 61 59 69M81 69 Q89 61 97 69" fill="none" stroke="${INK}" stroke-width="3" stroke-linecap="round"/>`;
+    const brow = p === 'sad' ? `<path d="M42 58 L60 63M98 58 L80 63" stroke="${INK}" stroke-width="2.8" stroke-linecap="round"/>` : `<path d="M42 60 Q52 55 60 59M98 60 Q88 55 80 59" fill="none" stroke="${INK}" stroke-width="2.4" stroke-linecap="round" opacity=".55"/>`;
+    const eye = x => `<ellipse cx="${x}" cy="69" rx="7.5" ry="5.2" fill="#fff" stroke="${INK}" stroke-width="2"/><circle cx="${x}" cy="69.5" r="3.6" fill="${INK}"/><circle cx="${x + 1.3}" cy="68.2" r="1.2" fill="#fff"/><path d="M${x - 8} 67 Q${x} 61 ${x + 8} 67" fill="${p === 'sad' ? 'none' : '#d3bd96'}" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>`;
+    return brow + eye(51) + eye(89);
   }
   function mouth(p) {
-    if (p === 'cheer') return `<path d="M50 92 Q60 104 70 92 Z" fill="#7a2f2f" stroke="${INK}" stroke-width="2.2" stroke-linejoin="round"/>`;
-    if (p === 'happy') return `<path d="M51 92 Q60 100 69 92" fill="none" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>`;
-    if (p === 'sad') return `<path d="M52 96 Q60 90 68 96" fill="none" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>`;
-    return `<path d="M53 93 Q60 97 67 93" fill="none" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>`;
+    if (p === 'cheer') return `<path d="M60 108 Q70 119 80 108 Z" fill="#7a2f2f" stroke="${INK}" stroke-width="2.4" stroke-linejoin="round"/>`;
+    if (p === 'happy') return `<path d="M60 107 Q70 115 80 107" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/>`;
+    if (p === 'sad') return `<path d="M61 113 Q70 106 79 113" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/>`;
+    return `<path d="M61 108 Q70 112 79 108" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/>`;
   }
   function sprite(p = 'idle', scale = 4) {
-    const px = Math.round(30 * scale * 0.9);
-    const spark = p === 'cheer' ? `<g fill="${HORN}"><path d="M100 20 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5z"/><path d="M14 16 l2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2z"/></g>` : '';
-    return `<svg class="sprite" viewBox="0 0 120 124" width="${px}" height="${Math.round(px * 124 / 120)}" role="img" aria-label="Pulse, the AeroMedQBank ram">
-      ${horn}<g transform="translate(120 0) scale(-1 1)">${horn}</g>
-      <ellipse cx="33" cy="64" rx="10" ry="5.5" transform="rotate(-24 33 64)" fill="${FACE}" stroke="${INK}" stroke-width="2.4"/>
-      <ellipse cx="87" cy="64" rx="10" ry="5.5" transform="rotate(24 87 64)" fill="${FACE}" stroke="${INK}" stroke-width="2.4"/>
-      ${wool(44, 108, 13)}${wool(76, 108, 13)}${wool(60, 112, 13)}
-      <circle cx="60" cy="110" r="8.5" fill="${INK}"/><path d="M58 104.5h4v3.5h3.5v4H62v3.5h-4V112h-3.5v-4H58z" fill="${HORN}"/>
-      <path d="M41 42 Q60 35 79 42 L82 70 Q82 97 60 101 Q38 97 38 70 Z" fill="${FACE}" stroke="${INK}" stroke-width="2.6" stroke-linejoin="round"/>
-      ${wool(60, 33, 11)}${wool(48, 37, 9.5)}${wool(72, 37, 9.5)}${wool(40, 45, 7.5)}${wool(80, 45, 7.5)}
-      <path d="M52 34 Q60 38 68 34" fill="none" stroke="${WOOLSH}" stroke-width="2" stroke-linecap="round"/>
-      <ellipse cx="60" cy="88" rx="15" ry="10.5" fill="${MUZ}" stroke="${INK}" stroke-width="2.2"/>
-      <ellipse cx="60" cy="82" rx="5.4" ry="3.6" fill="#5b3a3a"/>
+    const w = Math.round(30 * scale * 0.95), h = Math.round(w * 150 / 140);
+    const spark = p === 'cheer' ? `<g fill="#d8a92e"><path d="M124 18 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z"/><path d="M14 14 l2.4 5.6 5.6 2.4 -5.6 2.4 -2.4 5.6 -2.4 -5.6 -5.6 -2.4 5.6 -2.4z"/></g>` : '';
+    return `<svg class="sprite" viewBox="0 0 140 150" width="${w}" height="${h}" role="img" aria-label="Pulse, the AeroMedQBank ram">
+      <defs><linearGradient id="mh" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e2b640"/><stop offset=".6" stop-color="#c8962a"/><stop offset="1" stop-color="#a87a1c"/></linearGradient>
+        <linearGradient id="mf" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#cdb48c"/><stop offset=".35" stop-color="#e6d3ae"/><stop offset=".65" stop-color="#e6d3ae"/><stop offset="1" stop-color="#cdb48c"/></linearGradient></defs>
+      ${horn}<g transform="translate(140 0) scale(-1 1)">${horn}</g>
+      <ellipse cx="38" cy="84" rx="11" ry="6" transform="rotate(-28 38 84)" fill="#d6bf98" stroke="${INK}" stroke-width="2.4"/>
+      <ellipse cx="102" cy="84" rx="11" ry="6" transform="rotate(28 102 84)" fill="#d6bf98" stroke="${INK}" stroke-width="2.4"/>
+      <path d="M30 128 Q34 112 52 116 L88 116 Q106 112 110 128 L112 150 H28Z" fill="${WOOL}" stroke="${INK}" stroke-width="2.6" stroke-linejoin="round"/>
+      <g fill="none" stroke="${WOOLSH}" stroke-width="2.2" stroke-linecap="round"><path d="M40 134 q5 -5 10 0 q5 5 10 0"/><path d="M82 137 q5 -5 10 0 q5 5 10 0"/></g>
+      <path d="M56 116 C54 132 62 140 70 142 C78 140 86 132 84 116" fill="none" stroke="#3b4a24" stroke-width="3.4" stroke-linecap="round"/><circle cx="70" cy="143" r="6.5" fill="#cfd6cc" stroke="${INK}" stroke-width="2.2"/><circle cx="70" cy="143" r="2.6" fill="#8f9a90"/>
+      <path d="M46 42 Q70 34 94 42 L98 72 Q100 96 92 108 Q84 120 70 121 Q56 120 48 108 Q40 96 42 72 Z" fill="url(#mf)" stroke="${INK}" stroke-width="2.8" stroke-linejoin="round"/>
+      <path d="M62 56 Q70 52 78 56 L76 86 Q70 90 64 86Z" fill="#f0e3c6" opacity=".55"/>
+      <g fill="${WOOL}" stroke="${INK}" stroke-width="2.4"><circle cx="70" cy="37" r="11"/><circle cx="57" cy="41" r="9.5"/><circle cx="83" cy="41" r="9.5"/><circle cx="48" cy="48" r="7"/><circle cx="92" cy="48" r="7"/></g>
+      <path d="M63 36 Q70 40 77 36" fill="none" stroke="${WOOLSH}" stroke-width="2" stroke-linecap="round"/>
+      <ellipse cx="70" cy="103" rx="15.5" ry="13.5" fill="#f6ead0" stroke="${INK}" stroke-width="2.3"/>
+      <ellipse cx="70" cy="95" rx="6.5" ry="4" fill="#6a4646"/>
       ${eyes(p)}${mouth(p)}${spark}</svg>`;
   }
 
