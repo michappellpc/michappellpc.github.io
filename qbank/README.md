@@ -23,6 +23,9 @@ The app is installable ("Add to Home Screen") and works offline after the first 
 ## Local preview
 `python3 -m http.server` from the repo root, then open `/qbank/`.
 
+## Cover picture
+The dashboard cover is a built-in vector illustration. To use your own photo instead, put an image (JPEG or WebP, about 1600 px wide, one you have the right to use) in `qbank/img/` and set `"coverImage": "img/your-photo.jpg"` in `data/config.json`. Government photos from DVIDS are usually free to use, but check each photo's terms.
+
 ## Features
 Tutor and timed modes, filters (board, subject, unused/incorrect/flagged), option cross-out, flagging, notes, question navigator, keyboard shortcuts (1-9/letters, ←/→, F, Enter), results by subject, test review, history, dark mode, progress backup.
 

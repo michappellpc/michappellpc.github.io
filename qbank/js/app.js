@@ -11,7 +11,7 @@ const fmt = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const boardName = id => (bank.boards.find(b => b.id === id) || {}).name || id;
 const isDraft = q => q.status !== 'reviewed';
-const mascotOn = () => !!Store.data.settings.mascot;
+const mascotOn = () => Store.data.settings.mascot !== false;
 const showDrafts = () => Store.data.settings.showDrafts !== false;
 const notesText = q => q.optionNotes ? '\n\nAnswer choices:\n' + q.options.filter(o => q.optionNotes[o.id]).map(o => esc(`${o.id}. ${q.optionNotes[o.id]}`)).join('\n') : '';
 const csvCell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -139,12 +139,12 @@ function dashboard() {
   const active = Store.data.active;
   const rk = Mascot.rankFor(c);
   const acc = c + w ? pct(c, c + w) : null, missed = all.filter(s => s.last === 'w').length;
-  const hello = acc === null ? 'Reporting for duty, Doc! Ready for your first set of reps?'
-    : (acc >= 80 ? 'Hooah! You\'re holding a strong average. Keep the pressure on.' : acc >= 60 ? 'Solid progress. Let\'s tighten up the weak spots.' : 'Tough terrain, but every question is a rep that counts.')
+  const hello = acc === null ? 'Welcome, Doc. Ready for your first set of questions?'
+    : (acc >= 80 ? 'Strong average. Keep the pressure on.' : acc >= 60 ? 'Solid progress. Let\'s tighten up the weak spots.' : 'Every question is practice that counts.')
     + (missed ? ` You have ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
   const headline = acc === null ? 'Start a test to build your performance profile.' : `${pct(c, c + w)}% correct across ${c + w} answers.` + (missed ? ` ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
   $app.innerHTML = `
-  ${mascotOn() ? Mascot.scene() : `<div class="pagehead"><div><h2 class="pagetitle">Dashboard</h2><p class="muted">${esc(headline)}</p></div><a class="btn primary" href="#/create">Create a new test</a></div>`}
+  ${Mascot.scene(bank.config.coverImage)}
   ${active ? `<div class="card row spread"><div><b>Test in progress</b> <span class="muted">(${Object.keys(active.answers).length}/${active.qids.length} answered)</span></div><a class="btn primary" href="#/test">Resume</a></div>` : ''}
   <div class="card rank">
     <div class="row" style="gap:14px;flex-wrap:nowrap"><span class="rankbadge" aria-hidden="true">${esc(rk.abbr)}</span>
@@ -160,8 +160,9 @@ function dashboard() {
   <div class="card"><h2>Performance by subject</h2>
     ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th><span class="sr">Progress</span></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
-  ${mascotOn() ? '<a class="btn primary" href="#/create">Create a new test</a>' : ''}`;
-  if (mascotOn()) Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 4 });
+  `;
+  document.getElementById('cover-text').innerHTML = `<h2 class="pagetitle">Dashboard</h2><p>${esc(headline)}</p><a class="btn primary" href="#/create">Create a new test</a>`;
+  if (mascotOn()) Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 5 });
 }
 
 // ---------- create test ----------
@@ -254,7 +255,7 @@ function renderTest() {
   const L = Mascot.lines;
   const coach = shown
     ? (sel === q.answer
-      ? { pose: streak >= 3 ? 'cheer' : 'happy', msg: streak >= 3 ? `${streak} in a row! Squared away.` : Mascot.pick(L.correct, id) }
+      ? { pose: streak >= 3 ? 'cheer' : 'happy', msg: streak >= 3 ? `${streak} in a row. Nicely done.` : Mascot.pick(L.correct, id) }
       : { pose: 'sad', msg: Mascot.pick(L.wrong, id) })
     : { pose: 'idle', msg: tutor || t.idx === 0 ? Mascot.pick(L.tips, id + t.idx) : '' };
   if (mascotOn()) Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 3 });
@@ -340,7 +341,7 @@ function results(id) {
     <div class="stat"><b>${r.mode}</b><span class="muted">Mode</span></div></div></div>
     <div class="card"><h3>By subject</h3><table><tbody>${Object.entries(by).map(([s, o]) => `<tr><td>${esc(s)}</td><td>${o.c}/${o.n}</td><td>${pct(o.c, o.n)}%</td></tr>`).join('')}</tbody></table></div>
     <a class="btn primary" href="#/review/${r.id}">Review questions</a> <a class="btn" href="#/create">New test</a>`;
-  if (mascotOn()) Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding! That is board-ready work. Hooah!' } : p >= 60 ? { pose: 'happy', msg: 'Solid mission. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough exercise. Review makes it stick, and I\'m with you for the next rep.' });
+  if (mascotOn()) Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding. That is board-ready work.' } : p >= 60 ? { pose: 'happy', msg: 'Solid work. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough exercise. Review makes it stick, and I\'m with you for the next rep.' });
 }
 
 function review(id) {
@@ -376,7 +377,7 @@ function settings() {
   $app.innerHTML = `<div class="card"><h2>Settings</h2>
     <p><label for="theme">Theme</label> <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
     <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label>
-    <label class="chk"><input type="checkbox" id="mascot" ${mascotOn() ? 'checked' : ''}> Show the ram mascot and encouragement</label></div>
+    <label class="chk"><input type="checkbox" id="mascot" ${mascotOn() ? 'checked' : ''}> Show the mascot and encouragement</label></div>
     ${Cloud.enabled ? `<div class="card"><h3>Account</h3>
       <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.role === 'reviewer' ? 'Reviewer' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
       <p class="muted" id="syncline"></p>
