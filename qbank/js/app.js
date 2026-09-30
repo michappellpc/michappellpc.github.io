@@ -185,8 +185,13 @@ function focusAreas() {
         ${lessons.length ? `<ul class="focus-lessons">${lessons.slice(0, 3).map(l => `<li><a href="#/lesson/${encodeURIComponent(l.id)}">${esc(l.title)}</a></li>`).join('')}</ul>${lessons.length > 3 ? `<p class="small"><a href="#/lessons/${encodeURIComponent(o.subject)}">All ${lessons.length} lessons in this subject</a></p>` : ''}` : '<p class="muted small">No lesson for this subject yet.</p>'}
         <a class="btn" href="#/create/${encodeURIComponent(o.subject)}/incorrect">Practice the ones you missed</a></section>`;
     }).join('')}</div>`;
-  } else if (answered >= FOCUS_MIN * 2) body = '<p class="muted">No weak spots right now: every subject you have practised is at 80% or better. Keep going.</p>';
-  else body = `<p class="muted">Answer at least ${FOCUS_MIN} questions in a subject and your weakest ones will show up here, with lessons to review.</p>`;
+  } else if (Object.values(by).some(o => o.right + o.wrong >= FOCUS_MIN)) body = '<p class="muted">No weak spots right now: every subject you have practised is at 80% or better. Keep going.</p>';
+  else {                                                     // not enough answers yet: show the feature and how close they are
+    const most = Math.max(0, ...Object.values(by).map(o => o.right + o.wrong)), need = FOCUS_MIN - most;
+    body = `<p><b>Need ${need} more question${need === 1 ? '' : 's'}</b> in one subject until your focus areas appear.</p>
+      <div class="bar" role="progressbar" aria-label="Progress toward focus areas" aria-valuemin="0" aria-valuemax="${FOCUS_MIN}" aria-valuenow="${most}"><i style="width:${pct(most, FOCUS_MIN)}%"></i></div>
+      <p class="muted small" style="margin-top:8px">Once you have answered ${FOCUS_MIN} questions in a subject, this section shows your weakest subjects, the topics you miss most, and the lessons to review, with a button to practice the questions you missed.</p>`;
+  }
   return `<div class="card" id="focus"><h2>Focus areas</h2>${body}</div>`;
 }
 
