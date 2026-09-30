@@ -220,8 +220,8 @@ function renderTest() {
     const s = Store.qstat(qid); if (s && s.flagged) c += 'flag ';
     return `<button class="${c}" data-go="${i}">${i + 1}</button>`;
   }).join('');
-  $app.innerHTML = `
-  <div class="card">
+  $app.innerHTML = `<div class="testlayout"><div class="testmain">
+  <div class="card qcard">
     <div class="row spread"><div>${q.boards.map(b => `<span class="tag">${esc(boardName(b))}</span>`).join('')}${isDraft(q) ? '<span class="tag draft" title="Not yet reviewed by a physician">Draft</span>' : ''}<span class="muted">${esc(q.subject)}${q.topic && shown ? ' · ' + esc(q.topic) : ''}</span></div>
       <div class="muted">Question ${t.idx + 1} of ${t.qids.length}</div></div>
     <p class="stem">${esc(q.stem)}</p>
@@ -243,8 +243,9 @@ function renderTest() {
       <span style="flex:1"></span><button class="danger" id="end">End test</button>
     </div>
     <details style="margin-top:12px"><summary>Notes</summary><textarea id="note" rows="3" placeholder="Your notes on this question">${esc(st ? st.note : '')}</textarea></details>
-  </div>
-  <div class="card"><div class="nav">${nav}</div></div>
+  </div></div>
+  <aside class="card navcard" aria-label="Question navigator"><h2 class="navh">Questions</h2><div class="nav">${nav}</div>
+    <p class="muted small legend">${t.qids.filter(x => t.answers[x]).length} of ${t.qids.length} answered</p><div class="bar" aria-hidden="true"><i style="width:${Math.round(100 * t.qids.filter(x => t.answers[x]).length / t.qids.length)}%"></i></div></aside></div>
   <div style="height:110px"></div><div id="coach" class="coach"></div>`;
   let streak = 0;
   if (shown && sel === q.answer) for (let i = t.idx; i >= 0 && t.revealed[t.qids[i]] && t.answers[t.qids[i]] === bank.byId[t.qids[i]].answer; i--) streak++;
