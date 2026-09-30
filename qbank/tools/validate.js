@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Validates qbank/data.  Usage: node qbank/tools/validate.js [--strict] [--summary]
+//   --data <dir> validates another folder with the same layout (e.g. qbank/private).
 //   errors fail the run; warnings only print (with --strict they fail too).
 const fs = require('fs'), path = require('path');
-const dir = path.join(__dirname, '..', 'data'), root = path.join(__dirname, '..');
+const argv = process.argv.slice(2), di = argv.indexOf('--data');
+const dir = di >= 0 ? path.resolve(argv[di + 1]) : path.join(__dirname, '..', 'data'), root = path.resolve(dir, '..');
 const strict = process.argv.includes('--strict'), summary = process.argv.includes('--summary');
 const man = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
 const boardIds = new Set(man.boards.map(b => b.id));

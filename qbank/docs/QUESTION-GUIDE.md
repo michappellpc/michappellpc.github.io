@@ -1,12 +1,17 @@
 # Adding questions to Ram QBank
 
+## Where the questions live
+
+With accounts turned on (docs/CLOUD-SETUP.md), **real questions never go in the public repo.** Keep them in `qbank/private/`, which git ignores, and upload them to the private database with `node qbank/tools/push-questions.js`. The examples below use `data/questions/` for the public demo; for real work add `--data qbank/private` to the import, export and validate commands and save files under `qbank/private/questions/`.
+
 ## The workflow
 
 1. **Draft** questions with Fable (prompt below), or write them yourselves.
-2. **Save** the JSON it returns as `data/questions/<name>.json`.
-3. **Check** it: `node tools/validate.js` (also runs automatically on GitHub for every push).
-4. **List** the file in `data/manifest.json` under `files` (the importer can do this with `--add`).
-5. **Review** every question with a physician (see "Review" below), then mark it `reviewed`.
+2. **Save** the JSON it returns as `qbank/private/questions/<name>.json` (`node qbank/tools/push-questions.js --init` creates the folder).
+3. **Check** it: `node qbank/tools/validate.js --data qbank/private`.
+4. **List** the file in `qbank/private/manifest.json` under `files` (the importer can do this with `--add`).
+5. **Upload** it: `node qbank/tools/push-questions.js` (see docs/CLOUD-SETUP.md, step 8).
+6. **Review** every question with a physician (see "Review" below), then mark it `reviewed` and upload again.
 
 Everything a model writes starts as `"status": "draft"`. Draft questions show an amber **Draft** tag in the app, and any user can hide them under Settings. Only a physician reviewer should change a question to `reviewed`.
 

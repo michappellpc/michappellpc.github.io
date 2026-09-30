@@ -125,3 +125,10 @@ nav a.on{color:var(--hdrfg);font-weight:700}
 .insignia{max-width:112px;height:auto}
 .rank .insignia{flex:none}
 #fb-ref{flex:1;min-width:0}
+
+.signin{max-width:440px;margin:20px auto}
+.signin label{display:block;margin:12px 0 4px;font-weight:600}
+.signin input{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}
+.notice{background:var(--sel);border-left:4px solid var(--warn);padding:8px 12px;border-radius:0 8px 8px 0;margin:12px 0}
+.linkish{border:0;background:none;color:var(--accent);text-decoration:underline;padding:8px}
+body.locked nav,body.locked .timer{display:none}

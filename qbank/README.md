@@ -11,6 +11,9 @@ See **docs/QUESTION-GUIDE.md** for the full workflow (including a ready-made pro
 
 Question fields: `id` (unique), `status` (`draft` or `reviewed`), `boards` (`aem`/`om`/`pm`, one or more), `subject`, `topic`, `difficulty` (1-3), `stem`, `options[{id,text}]`, `answer` (option id), `explanation`, `optionNotes{id:text}`, `references[]`, optional `image` + `imageAlt`, `reviewedBy`. Schema: `data/question.schema.json`.
 
+## Accounts and private questions (optional)
+Off by default, so the demo works with no setup. To make the app invitation-only with a private question bank, saved progress and an admin page, follow **docs/CLOUD-SETUP.md** (about 40 minutes, uses a free Supabase project). Database and privacy rules: `supabase/schema.sql`, tested with `supabase/tests/run.sh`. Real questions live in the git-ignored `qbank/private/` folder and are uploaded with `tools/push-questions.js`.
+
 ## Question feedback
 Every question has a **Feedback** button (during a test and on the review page). It opens the team's Google Form in a new tab, with a Copy button for the question's reference so people can paste it into the form. The form address is `feedbackUrl` in `data/config.json`.
 

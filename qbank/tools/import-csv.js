@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // Turns a spreadsheet (saved as CSV) into a question file.
-//   node qbank/tools/import-csv.js questions.csv [--out data/questions/<name>.json] [--prefix aem-hypoxia] [--add]
+//   node qbank/tools/import-csv.js questions.csv [--out data/questions/<name>.json] [--prefix aem-hypoxia] [--data qbank/private] [--add]
 // --add also lists the new file in data/manifest.json.  See docs/question-template.csv for the columns.
 const fs = require('fs'), path = require('path');
 const args = process.argv.slice(2), valOf = f => args.includes(f) ? args[args.indexOf(f) + 1] : null;
-const inFile = args.find(a => !a.startsWith('--') && a !== valOf('--out') && a !== valOf('--prefix'));
+const inFile = args.find(a => !a.startsWith('--') && a !== valOf('--out') && a !== valOf('--prefix') && a !== valOf('--data'));
 if (!inFile) { console.error('Usage: import-csv.js file.csv [--out path.json] [--add]'); process.exit(2); }
 const base = path.basename(inFile, path.extname(inFile)).toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const outArg = valOf('--out'), prefix = (valOf('--prefix') || base).toLowerCase().replace(/[^a-z0-9]+/g, '-');
-const dataDir = path.join(__dirname, '..', 'data');
+const dataDir = valOf('--data') ? path.resolve(valOf('--data')) : path.join(__dirname, '..', 'data');
 const outFile = path.resolve(outArg || path.join(dataDir, 'questions', base + '.json'));
 const man = JSON.parse(fs.readFileSync(path.join(dataDir, 'manifest.json'), 'utf8'));
 
@@ -55,6 +55,6 @@ fs.writeFileSync(outFile, JSON.stringify(out, null, 2) + '\n');
 console.log(`Wrote ${out.length} question(s) to ${path.relative(process.cwd(), outFile)}`);
 if (args.includes('--add')) {
   const rel = path.relative(dataDir, outFile).split(path.sep).join('/');
-  if (!man.files.includes(rel)) { man.files.push(rel); fs.writeFileSync(path.join(dataDir, 'manifest.json'), JSON.stringify(man, null, 2) + '\n'); console.log('Added to data/manifest.json'); }
+  if (!man.files.includes(rel)) { man.files.push(rel); fs.writeFileSync(path.join(dataDir, 'manifest.json'), JSON.stringify(man, null, 2) + '\n'); console.log('Added to ' + path.relative(process.cwd(), path.join(dataDir, 'manifest.json'))); }
 }
 console.log('Next: node qbank/tools/validate.js');

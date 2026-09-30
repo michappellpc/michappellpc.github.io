@@ -2,7 +2,7 @@
 const $app = document.getElementById('app'), $timer = document.getElementById('timer');
 let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {} };
 const APP_VERSION = '1.3';
-let tick = null;
+let tick = null, ready = false, profile = null;
 
 // ---------- helpers ----------
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,16 +20,21 @@ function applyTheme() {
   if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
 }
 
-async function load() {
-  if (window.__QBANK_DATA) { const m = window.__QBANK_DATA; bank.config = m.config || {}; bank.boards = m.boards; bank.subjects = m.subjects; bank.questions = m.questions; bank.byId = Object.fromEntries(bank.questions.map(q => [q.id, q])); return; }
+// Boards and subjects are not sensitive, so they always come from the static manifest. Questions come from the
+// private database in cloud mode, or from the static files (the pilot/demo mode) when accounts are not configured.
+async function loadMeta() {
+  if (window.__QBANK_DATA) { const m = window.__QBANK_DATA; bank.config = m.config || {}; bank.boards = m.boards; bank.subjects = m.subjects; return m.questions; }
   const base = 'data/';
   const m = await (await fetch(base + 'manifest.json')).json();
-  const lists = await Promise.all(m.files.map(f => fetch(base + f).then(r => r.json())));
   bank.config = await fetch(base + 'config.json').then(r => r.json()).catch(() => ({}));
   bank.boards = m.boards; bank.subjects = m.subjects;
-  bank.questions = lists.flat();
-  bank.byId = Object.fromEntries(bank.questions.map(q => [q.id, q]));
+  return m.files;
 }
+async function loadStatic(files) {
+  const lists = Array.isArray(files) && typeof files[0] === 'object' ? [files] : await Promise.all(files.map(f => fetch('data/' + f).then(r => r.json())));
+  setQuestions(lists.flat());
+}
+function setQuestions(list) { bank.questions = list; bank.byId = Object.fromEntries(list.map(q => [q.id, q])); }
 
 function zoomImage(src, alt) {
   const d = document.createElement('div'); d.className = 'modal zoom';
@@ -85,11 +90,12 @@ function feedbackDialog(q) {
 // ---------- router ----------
 function route() {
   clearInterval(tick); $timer.hidden = true; Mascot.stop();
+  if (Cloud.enabled && !ready) return;
   const [p, arg] = location.hash.replace(/^#\/?/, '').split('/');
   document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href') === '#/' + (p === 'test' ? 'create' : p === 'results' || p === 'review' ? 'history' : p)));
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
-  ({ '': dashboard, create, history, settings, results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
+  ({ '': dashboard, create, history: historyPage, settings, admin: adminPage, results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
@@ -280,7 +286,7 @@ function finish() {
     if (!(t.mode === 'tutor' && t.revealed[qid]) && t.answers[qid]) Store.record(qid, ok); // not yet recorded
   });
   const rec = { id: t.id, date: Date.now(), mode: t.mode, qids: t.qids, answers: t.answers, correct: c, total: t.qids.length, seconds: Math.round(elapsed(t)) };
-  Store.data.tests.unshift(rec); Store.data.active = null; Store.save();
+  Store.data.active = null; Store.addTest(rec);
   location.hash = '#/results/' + rec.id;
 }
 
@@ -315,7 +321,7 @@ function review(id) {
   $app.querySelectorAll('[data-fb]').forEach(b => b.onclick = () => feedbackDialog(bank.byId[b.dataset.fb]));
 }
 
-function history() {
+function historyPage() {
   const T = Store.data.tests;
   $app.innerHTML = `<div class="card"><h2>Test history</h2>${T.length ? `<table><thead><tr><th>Date</th><th>Mode</th><th>Score</th><th>Time</th><th></th></tr></thead><tbody>${T.map(r =>
     `<tr><td>${new Date(r.date).toLocaleString()}</td><td>${r.mode}</td><td>${r.correct}/${r.total} (${pct(r.correct, r.total)}%)</td><td>${fmt(r.seconds)}</td><td><a href="#/results/${r.id}">View</a></td></tr>`).join('')}</tbody></table>` : '<p class="muted">No completed tests yet.</p>'}</div>`;
@@ -327,22 +333,156 @@ function settings() {
   $app.innerHTML = `<div class="card"><h2>Settings</h2>
     <p>Theme <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
     <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label></div>
-    <div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
-    <div class="row"><button id="exp">Export progress</button><button id="imp">Import progress</button><input type="file" id="file" accept="application/json" hidden><button class="danger" id="reset">Reset all progress</button></div></div>`;
-  document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.save(); };
-  document.getElementById('theme').onchange = e => { Store.data.settings.theme = e.target.value; Store.save(); applyTheme(); };
-  document.getElementById('exp').onclick = () => {
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([Store.exportJSON()], { type: 'application/json' }));
-    a.download = 'qbank-progress-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
-  };
-  document.getElementById('imp').onclick = () => document.getElementById('file').click();
-  document.getElementById('file').onchange = async e => {
-    try { Store.importJSON(await e.target.files[0].text()); applyTheme(); await ask('Progress imported.', 'OK', null); location.hash = '#/'; } catch (err) { ask('Import failed: ' + err.message, 'OK', null); }
-  };
+    ${Cloud.enabled ? `<div class="card"><h3>Account</h3>
+      <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
+      <p class="muted" id="syncline"></p>
+      <div class="row"><button id="syncnow">Sync now</button><button id="signout">Sign out</button></div></div>
+    <div class="card"><h3>Your data</h3><p class="muted">Your progress is saved to your account and kept on this device so the app works offline.</p>
+      <div class="row"><button class="danger" id="reset">Reset all progress</button></div></div>`
+    : `<div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
+      <div class="row"><button id="exp">Export progress</button><button id="imp">Import progress</button><input type="file" id="file" accept="application/json" hidden><button class="danger" id="reset">Reset all progress</button></div></div>`}`;
+  document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.touchSettings(); };
+  document.getElementById('theme').onchange = e => { Store.data.settings.theme = e.target.value; Store.touchSettings(); applyTheme(); };
+  if (!Cloud.enabled) {
+    document.getElementById('exp').onclick = () => {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([Store.exportJSON()], { type: 'application/json' }));
+      a.download = 'qbank-progress-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
+    };
+    document.getElementById('imp').onclick = () => document.getElementById('file').click();
+    document.getElementById('file').onchange = async e => {
+      try { Store.importJSON(await e.target.files[0].text()); applyTheme(); await ask('Progress imported.', 'OK', null); location.hash = '#/'; } catch (err) { ask('Import failed: ' + err.message, 'OK', null); }
+    };
+  } else {
+    const line = document.getElementById('syncline');
+    const paint = () => { const n = Cloud.pending(); line.textContent = n ? `${n} change${n > 1 ? 's' : ''} waiting to sync.` : (Cloud.lastSync ? 'All changes synced.' : 'Signed in.'); };
+    paint();
+    document.getElementById('syncnow').onclick = async () => { line.textContent = 'Syncing...'; try { await Cloud.sync(); } catch (e) { toast(e.offline ? 'No connection. Your changes are saved on this device.' : 'Could not sync. Try again shortly.'); } paint(); };
+    document.getElementById('signout').onclick = () => signOut();
+  }
   document.getElementById('reset').onclick = async () => { if (await ask('Delete ALL progress? This cannot be undone.', 'Delete everything')) { Store.reset(); location.hash = '#/'; route(); } };
 }
 
+// ---------- accounts ----------
+function lockUI(on) { document.body.classList.toggle('locked', on); if (on) { $timer.hidden = true; clearInterval(tick); Mascot.stop(); } }
+
+function renderSignIn(note = '') {
+  ready = false; lockUI(true);
+  $app.innerHTML = `<div class="card signin"><div id="si-mascot"></div><h2>Sign in</h2>${note ? `<p class="notice">${esc(note)}</p>` : ''}
+    <form id="si"><label for="si-email">Email</label><input id="si-email" type="email" autocomplete="username" required>
+    <label for="si-pw">Password</label><input id="si-pw" type="password" autocomplete="current-password" required>
+    <p class="notice" id="si-err" hidden></p>
+    <div class="row"><button class="primary" type="submit" id="si-go">Sign in</button><button type="button" class="linkish" id="si-forgot">Forgot password?</button></div></form>
+    <p class="muted">Access is by invitation. Ask your program lead if you need an account.</p></div>`;
+  Mascot.mount(document.getElementById('si-mascot'), { pose: 'idle', msg: 'Sign in to start training, Doc.', scale: 3 });
+  const err = document.getElementById('si-err'), go = document.getElementById('si-go');
+  const fail = m => { err.textContent = m; err.hidden = false; go.disabled = false; };
+  document.getElementById('si').onsubmit = async e => {
+    e.preventDefault(); err.hidden = true; go.disabled = true;
+    try { await Cloud.signIn(document.getElementById('si-email').value.trim(), document.getElementById('si-pw').value); await startSession(); }
+    catch (x) { fail(x.message); }
+  };
+  document.getElementById('si-forgot').onclick = async () => {
+    const em = document.getElementById('si-email').value.trim();
+    if (!em) { fail('Type your email above first, then choose Forgot password.'); return document.getElementById('si-email').focus(); }
+    try { await Cloud.recover(em); err.hidden = false; err.textContent = 'If that email has an account, a reset link is on its way. It can take a few minutes.'; }
+    catch (x) { fail(x.message); }
+  };
+}
+
+function renderSetPassword(kind) {
+  ready = false; lockUI(true);
+  $app.innerHTML = `<div class="card signin"><h2>${kind === 'invite' ? 'Welcome. Choose a password' : 'Choose a new password'}</h2>
+    <form id="sp"><label for="sp-1">New password (at least 8 characters)</label><input id="sp-1" type="password" autocomplete="new-password" minlength="8" required>
+    <label for="sp-2">Type it again</label><input id="sp-2" type="password" autocomplete="new-password" minlength="8" required>
+    <p class="notice" id="sp-err" hidden></p><div class="row"><button class="primary" type="submit" id="sp-go">Save password</button></div></form></div>`;
+  document.getElementById('sp').onsubmit = async e => {
+    e.preventDefault(); const err = document.getElementById('sp-err'), go = document.getElementById('sp-go');
+    const a = document.getElementById('sp-1').value, b = document.getElementById('sp-2').value;
+    if (a !== b) { err.textContent = 'The two passwords do not match.'; err.hidden = false; return; }
+    go.disabled = true;
+    try { await Cloud.setPassword(a); await startSession(); } catch (x) { err.textContent = x.message; err.hidden = false; go.disabled = false; }
+  };
+}
+
+function renderBlocked(email) {
+  ready = false; lockUI(true);
+  $app.innerHTML = `<div class="card signin"><h2>Account not active yet</h2>
+    <p>You are signed in as <b>${esc(email)}</b>, but this email has not been approved for access.</p>
+    <p class="muted">Ask your program lead to add it to the approved list, then choose Check again.</p>
+    <div class="row"><button class="primary" id="again">Check again</button><button id="bo">Sign out</button></div></div>`;
+  document.getElementById('again').onclick = () => startSession();
+  document.getElementById('bo').onclick = () => signOut();
+}
+
+async function startSession() {
+  ready = false; lockUI(true);
+  $app.innerHTML = '<div class="card"><p class="muted">Loading your questions...</p></div>';
+  try {
+    Store.use(Cloud.userKey()); applyTheme();
+    profile = await Cloud.profile();
+    if (!profile || !profile.active) return renderBlocked(Cloud.session.email);
+    setQuestions(await Cloud.questions());
+  } catch (e) {
+    if (e.auth) return renderSignIn('Please sign in again.');
+    $app.innerHTML = `<div class="card"><b>Could not load your questions.</b><p class="muted">${e.offline ? 'You are offline and this device has no saved copy yet. Connect once to download them.' : esc(e.message)}</p><button class="primary" id="retry">Try again</button> <button id="bo">Sign out</button></div>`;
+    document.getElementById('retry').onclick = () => startSession(); document.getElementById('bo').onclick = () => signOut();
+    return;
+  }
+  Store.hooks.attempt = (id, ok) => Cloud.queueAttempt(id, ok);
+  Store.hooks.mark = id => Cloud.queueMark(id);
+  Store.hooks.test = rec => Cloud.queueTest(rec);
+  Store.hooks.settings = () => Cloud.queueSettings();
+  Store.hooks.reset = () => Cloud.queueReset();
+  lockUI(false); ready = true;
+  document.getElementById('nav-admin').hidden = profile.role !== 'admin';
+  location.hash = '#/'; route();
+  Cloud.sync().then(() => { applyTheme(); if (ready && !Store.data.active && /^#?\/?$/.test(location.hash)) route(); }).catch(() => {});
+}
+
+async function signOut() {
+  if (Cloud.pending()) {
+    try { await Cloud.sync(); } catch {}
+    if (Cloud.pending() && !(await ask(`${Cloud.pending()} change(s) have not synced yet and will be lost if you sign out now.`, 'Sign out anyway'))) return;
+  }
+  const key = Cloud.userKey();
+  await Cloud.signOut(); Store.forget(key);
+  ['attempt', 'mark', 'test', 'settings', 'reset'].forEach(k => delete Store.hooks[k]);
+  profile = null; ready = false; Store.use('qbank.v1.signedout'); applyTheme();
+  renderSignIn();
+}
+
+async function adminPage() {
+  if (!profile || profile.role !== 'admin') { $app.innerHTML = '<div class="card"><h2>Admin</h2><p class="muted">This page is for administrators.</p></div>'; return; }
+  $app.innerHTML = '<div class="card"><p class="muted">Loading the group summary...</p></div>';
+  try {
+    const [mem, qs] = await Promise.all([Cloud.rpc('admin_member_summary'), Cloud.rpc('admin_question_stats')]);
+    const act = mem.filter(m => m.active), tot = act.reduce((a, m) => a + m.attempts, 0), cor = act.reduce((a, m) => a + m.correct, 0);
+    const hard = qs.filter(q => q.attempts >= 3).sort((a, b) => a.pct_correct - b.pct_correct).slice(0, 15);
+    $app.innerHTML = `<div class="grid">
+      <div class="card stat"><b>${act.length}</b><span>Active members</span></div><div class="card stat"><b>${tot}</b><span>Questions answered</span></div>
+      <div class="card stat"><b>${tot ? pct(cor, tot) + '%' : '-'}</b><span>Group correct</span></div><div class="card stat"><b>${qs.length}</b><span>Questions in bank</span></div></div>
+      <div class="card"><h2>Members</h2><div style="overflow-x:auto"><table><thead><tr><th>Email</th><th>Access</th><th>Answered</th><th>Correct</th><th>Last active</th></tr></thead><tbody>${mem.map(m =>
+        `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="card"><h2>Hardest questions</h2>${hard.length ? `<div style="overflow-x:auto"><table><thead><tr><th>Question</th><th>Subject</th><th>Answered</th><th>Correct</th></tr></thead><tbody>${hard.map(q =>
+        `<tr><td>${esc(q.question_id)}</td><td>${esc(q.subject)}</td><td>${q.attempts}</td><td>${Math.round(q.pct_correct)}%</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Shows up once questions have been answered at least 3 times.</p>'}</div>`;
+  } catch (e) { $app.innerHTML = `<div class="card"><h2>Admin</h2><p class="muted">Could not load: ${esc(e.message)}</p></div>`; }
+}
+
 // ---------- boot ----------
-applyTheme();
-load().then(route).catch(e => { $app.innerHTML = `<div class="card"><b>Could not load question data.</b><p class="muted">${esc(e.message)}. If you opened this file directly, serve it over http (e.g. <code>python3 -m http.server</code>) or use GitHub Pages.</p></div>`; });
+async function boot() {
+  applyTheme();
+  try {
+    const files = await loadMeta();
+    if (window.__QBANK_DATA) { setQuestions(files); ready = true; return route(); }          // single-file preview
+    Cloud.init(bank.config.supabase);
+    if (!Cloud.enabled) { await loadStatic(files); ready = true; return route(); }          // demo mode: no accounts
+    Cloud.onAuthLost(() => renderSignIn('Your session ended. Please sign in again.'));
+    const link = Cloud.consumeLink();
+    if (link && link.error) return renderSignIn(link.error);
+    if (link && (link.type === 'recovery' || link.type === 'invite')) return renderSetPassword(link.type);
+    if (!Cloud.session) return renderSignIn();
+    await startSession();
+  } catch (e) { $app.innerHTML = `<div class="card"><b>Could not load.</b><p class="muted">${esc(e.message)}. If you opened this file directly, serve it over http (e.g. <code>python3 -m http.server</code>) or use GitHub Pages.</p></div>`; }
+}
+boot();
 if ('serviceWorker' in navigator && !window.__QBANK_DATA && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
