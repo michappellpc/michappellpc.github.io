@@ -104,10 +104,15 @@ function feedbackDialog(q) {
 }
 
 // ---------- router ----------
-function route() {
+async function route() {
   clearInterval(tick); $timer.hidden = true; Mascot.stop();
   if (Cloud.enabled && !ready) return;
   const [p, arg, arg2, arg3] = location.hash.replace(/^#\/?/, '').split('/');
+  if (Cloud.enabled && p !== 'admin' && Admin.changed) {      // questions were edited on the Admin pages; load the new set before practising
+    Admin.changed = false;
+    try { setQuestions(await Cloud.questions()); } catch {}
+    if (location.hash.replace(/^#\/?/, '').split('/')[0] !== p) return;   // the person moved on while it loaded
+  }
   document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href').split('/').slice(0, 2).join('/') === '#/' + (p === 'test' ? 'create' : p === 'results' || p === 'review' ? 'history' : p)));
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();

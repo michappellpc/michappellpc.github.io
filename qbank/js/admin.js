@@ -47,7 +47,7 @@ const Admin = (() => {
     }
     return cache;
   }
-  const refresh = () => { cache = null; };
+  const refresh = () => { cache = null; Admin.changed = true; };
 
   // ------------------------------------------------------------------ list
   async function list() {
