@@ -43,17 +43,23 @@ const Mascot = (() => {
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inWool(x, y, 1)) g[y][x] = 'o';
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inWool(x, y, 0)) g[y][x] = woolShade((x + .5 - 20) / 16, (y + .5 - 25.5) / 13);
   }
-  // big spiral horn that sweeps out from under the helmet and curls around the ear
+  // big spiral horn: grows out of the side of the head below the helmet and coils to a tip, clear of the helmet
   function horn(g, flip) {
     const pts = [];
-    for (let i = 0; i <= 100; i++) {
-      const t = i / 100, ang = (-55 - 295 * t) * Math.PI / 180, r = 8.4 - 5.4 * t;
-      const x = 10.8 + r * Math.cos(ang), y = 17 + r * Math.sin(ang);
-      pts.push([flip ? N - x : x, y, 2.8 - 1.2 * t, i]);
+    for (let i = 0; i <= 110; i++) {
+      const t = i / 110, ang = (-410 * t) * Math.PI / 180, k = 1 - .55 * t;
+      const x = 8.5 + 5 * k * Math.cos(ang), y = 24.2 + 6.2 * k * Math.sin(ang);
+      pts.push([flip ? N - x : x, y, 2.5 - 1.2 * t, i]);
     }
-    const disc = (cx, cy, rad, ch) => { for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if ((x + .5 - cx) ** 2 + (y + .5 - cy) ** 2 <= rad * rad) g[y][x] = ch; };
-    pts.forEach(([x, y, w]) => disc(x, y, w + .9, 'h'));
-    pts.forEach(([x, y, w, i]) => disc(x, y, w, Math.floor(i / 7) % 2 ? 'H' : 'J'));
+    // color each pixel by its nearest point on the horn's centerline: light fill inside, dark edge at the rim
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      let best = null;
+      pts.forEach(([cx, cy, w, i]) => {
+        const d = Math.hypot(x + .5 - cx, y + .5 - cy) - w;
+        if (d <= .9 && (!best || d < best.d)) best = { d, i };
+      });
+      if (best) g[y][x] = best.d > -.6 ? 'h' : Math.floor(best.i / 9) % 2 ? 'H' : 'J';
+    }
   }
   // camouflage pattern for the helmet
   const camo = (x, y) => {
@@ -66,9 +72,6 @@ const Mascot = (() => {
     const up = name === 'cheer' || name === 'happy';
     wool(g);
     horn(g, false); horn(g, true);
-    // ears, tucked under the horns
-    [[11, 24.6], [N - 11, 24.6]].forEach(([ex, ey]) => { ell(g, ex, ey, 3.4, 1.9, () => 'a'); ell(g, ex, ey, 2.8, 1.4, () => 'T'); });
-    put(g, 9, 25, 'p'); put(g, 10, 25, 'p'); put(g, N - 10, 25, 'p'); put(g, N - 11, 25, 'p');
     // long ram face and muzzle
     ell(g, 20, 19.4, 8, 10, () => 'a');
     ell(g, 20, 19.4, 7.2, 9.2, (dx, dy) => (dy > .6 ? 't' : 'T'));
@@ -95,10 +98,10 @@ const Mascot = (() => {
     else if (name === 'sad') line(g, [[17, 27], [22, 27], [18, 26], [21, 26], [19, 26], [20, 26]], 'D');
     else line(g, [[17, 26], [22, 26], [18, 27], [21, 27], [19, 27], [20, 27]], 'D');
     // camo combat helmet with a medic red cross
-    for (let y = 0; y <= 14; y++) for (let x = 0; x < N; x++) if (((x + .5 - 20) / 10.6) ** 2 + ((y + .5 - 10.6) / 7.6) ** 2 <= 1) g[y][x] = y >= 14 ? 'Q' : camo(x, y);
-    for (let x = 9; x <= 30; x++) put(g, x, 14, 'Q');
-    ell(g, 20, 9.6, 3.6, 3.6, () => 'w');
-    line(g, [[19, 7], [20, 7], [19, 8], [20, 8], [19, 9], [20, 9], [19, 10], [20, 10], [19, 11], [20, 11], [17, 9], [18, 9], [21, 9], [22, 9], [17, 10], [18, 10], [21, 10], [22, 10]], 'r');
+    for (let y = 0; y <= 13; y++) for (let x = 0; x < N; x++) if (((x + .5 - 20) / 10.6) ** 2 + ((y + .5 - 9.6) / 7.6) ** 2 <= 1) g[y][x] = y >= 13 ? 'Q' : camo(x, y);
+    for (let x = 11; x <= 29; x++) put(g, x, 13, 'Q');
+    ell(g, 20, 8.6, 3.6, 3.6, () => 'w');
+    line(g, [[19, 6], [20, 6], [19, 7], [20, 7], [19, 8], [20, 8], [19, 9], [20, 9], [19, 10], [20, 10], [17, 8], [18, 8], [21, 8], [22, 8], [17, 9], [18, 9], [21, 9], [22, 9]], 'r');
     outline(g);
     if (name === 'cheer') { sparkle(g, 4, 5); sparkle(g, 35, 4); put(g, 2, 12, 'y'); put(g, 37, 11, 'y'); }
     return g;
@@ -151,13 +154,13 @@ const Mascot = (() => {
     }
     for (let x = 19; x <= 28; x++) { P(x, 5, 'x'); P(x, 6, 'x'); }
     [[27, 2], [28, 2], [27, 3], [28, 3], [28, 4], [27, 4], [26, 4]].forEach(([x, y]) => P(x, y, 'x'));
-    ell9(g, 17.5, 5.4, 2.6, 2, 'G');
+    ell9(g, 8.6, 5.2, 2.6, 2, 'G');
     for (let x = 8; x <= 17; x++) P(x, 10, 'x'); P(9, 9, 'x'); P(16, 9, 'x');
     P(13, 3, 'x'); P(13, 2, 'x');
     const span = frame ? [3, 24] : [6, 21];
     for (let x = span[0]; x <= span[1]; x++) P(x, 1, 'S');
     for (let x = 22; x <= 24; x++) P(x, frame ? 3 : 4, 'S');
-    return g;
+    return g.map(r => r.reverse());
   }
   function ell9(g, cx, cy, rx, ry, ch) { for (let y = 0; y < g.length; y++) for (let x = 0; x < g[0].length; x++) if (((x + .5 - cx) / rx) ** 2 + ((y + .5 - cy) / ry) ** 2 <= 1) g[y][x] = ch; }
   const heli = px => { const f = i => toSvg(heliGrid(i), px, 'px'); return `<span class="heli"><span class="hf a">${f(0)}</span><span class="hf b">${f(1)}</span></span>`; };
