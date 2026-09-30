@@ -12,7 +12,7 @@ See **docs/QUESTION-GUIDE.md** for the full workflow (including a ready-made pro
 Question fields: `id` (unique), `status` (`draft` or `reviewed`), `boards` (`aem`/`om`/`pm`, one or more), `subject`, `topic`, `difficulty` (1-3), `stem`, `options[{id,text}]`, `answer` (option id), `explanation`, `optionNotes{id:text}`, `references[]`, optional `image` + `imageAlt`, `reviewedBy`. Schema: `data/question.schema.json`.
 
 ## Question feedback
-Every question has a **Feedback** button (during a test and on the review page). Feedback goes to a Google Form you own, so it lands in a Google Sheet. Until `data/config.json` is filled in, it is only saved on the resident's device. Setup takes about 5 minutes: **docs/FEEDBACK-SETUP.md**. Feedback submitted offline is queued and sent automatically.
+Every question has a **Feedback** button (during a test and on the review page). It opens the team's Google Form in a new tab, with a Copy button for the question's reference so people can paste it into the form. The form address is `feedbackUrl` in `data/config.json`.
 
 ## Phones and offline
 The app is installable ("Add to Home Screen") and works offline after the first visit. `sw.js` keeps a cached copy; when online it always fetches fresh files. Fonts are hosted in `fonts/` (SIL OFL license) so nothing loads from outside sites. `node tools/make-icons.js` regenerates the app icons.

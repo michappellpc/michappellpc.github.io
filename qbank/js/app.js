@@ -52,62 +52,34 @@ function ask(msg, yes = 'OK', no = 'Cancel') {
 }
 
 // ---------- question feedback ----------
-// Delivery: a Google Form (data/config.json). Submissions are queued on the device and sent when possible, so nothing is lost offline.
-const FB_CATS = ['Wrong or debatable answer', 'Unclear or confusing question', 'Out of date, needs updating', 'Typo or formatting', 'Image problem', 'Suggestion', 'Other'];
-const fbQueue = () => (Store.data.feedbackQueue ||= []);
-let fbFlushing = false, fbLast = 0;
+// The Feedback button opens the team's Google Form (data/config.json -> feedbackUrl) in a new tab.
+const formUrl = () => { const u = String(bank.config.feedbackUrl || ''); return /^https:\/\/(docs\.google\.com\/forms\/|forms\.gle\/)/.test(u) ? u : ''; };
 function toast(msg) {
   const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg;
-  document.body.appendChild(t); setTimeout(() => t.remove(), 3800);
+  document.body.appendChild(t); setTimeout(() => t.remove(), 3200);
 }
-async function postFeedback(it) {
-  const cfg = bank.config.feedback || {}, body = new URLSearchParams();
-  Object.entries(cfg.fields || {}).forEach(([k, entry]) => { if (entry && it[k] != null) body.append(entry, it[k]); });
-  try { await fetch(cfg.formUrl, { method: 'POST', mode: 'no-cors', body }); return true; } catch { return false; }
-}
-// Connected only when the form address AND every field id are set; otherwise posts would be blank, Google would reject them silently, and feedback would be lost.
-const fbConnected = () => { const f = bank.config.feedback || {}; return !!(f.formUrl && f.fields && ['question', 'category', 'comment', 'contact', 'details'].every(k => f.fields[k])); };
-async function flushFeedback() {
-  if (fbFlushing || !fbConnected()) return;
-  fbFlushing = true;
-  const q = fbQueue();
-  for (const it of [...q]) { if (!(await postFeedback(it))) break; q.splice(q.indexOf(it), 1); Store.save(); }
-  fbFlushing = false;
-}
-window.addEventListener('online', flushFeedback);
-function feedbackDialog(q, answered) {
+function feedbackDialog(q) {
+  const url = formUrl(), ref = `${q.id} (${q.subject}${q.topic ? ' / ' + q.topic : ''})`;
   const d = document.createElement('div'); d.className = 'modal';
-  d.innerHTML = `<form class="card fb" aria-label="Question feedback">
-    <h3>Question feedback</h3><p class="muted">${esc(q.id)} &middot; ${esc(q.subject)}</p>
-    <label for="fb-cat">What kind of feedback?</label>
-    <select id="fb-cat">${FB_CATS.map(c => `<option>${esc(c)}</option>`).join('')}</select>
-    <label for="fb-msg">Details</label>
-    <textarea id="fb-msg" rows="5" maxlength="1500" required placeholder="What should be fixed or improved? If you think the answer is wrong, say what you think is right and why."></textarea>
-    <label for="fb-contact">Contact (optional)</label>
-    <input id="fb-contact" type="text" maxlength="120" placeholder="Email or name, only if you want a reply">
-    <p class="muted">Anonymous unless you add contact info. Do not include patient information.</p>
-    <div class="row"><button class="primary" type="submit">Send feedback</button><button type="button" data-cancel>Cancel</button></div></form>`;
+  d.innerHTML = `<div class="card fb" role="dialog" aria-label="Question feedback">
+    <h3>Question feedback</h3>
+    ${url ? `<p>Found a mistake or have a suggestion? Tell the team using a short form. It opens in a new tab.</p>
+    <p class="muted">1. Copy this question's reference and paste it into the form:</p>
+    <div class="row" style="flex-wrap:nowrap"><input id="fb-ref" type="text" readonly value="${esc(ref)}" aria-label="Question reference"><button id="fb-copy" type="button">Copy</button></div>
+    <p class="muted">2. Open the form:</p>
+    <div class="row"><a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open feedback form &#8599;</a><button type="button" data-cancel>Close</button></div>
+    <p class="muted">Do not include patient information.</p>`
+    : `<p class="muted">The feedback form has not been set up yet.</p><button type="button" data-cancel>Close</button>`}</div>`;
   const close = () => { d.remove(); document.removeEventListener('keydown', onKey, true); };
   const onKey = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey, true);
   d.onclick = e => { if (e.target === d || e.target.hasAttribute('data-cancel')) close(); };
-  d.querySelector('form').onsubmit = async e => {
-    e.preventDefault();
-    const msg = d.querySelector('#fb-msg').value.trim();
-    if (msg.length < 5) return d.querySelector('#fb-msg').focus();
-    if (Date.now() - fbLast < 8000) return toast('Please wait a few seconds before sending another.');
-    fbLast = Date.now();
-    fbQueue().push({
-      t: Date.now(), question: q.id, category: d.querySelector('#fb-cat').value, comment: msg.slice(0, 1500), contact: d.querySelector('#fb-contact').value.trim().slice(0, 120),
-      details: `status=${q.status || 'draft'}; subject=${q.subject}; topic=${q.topic || ''}; answered=${answered || 'none'}; app=v${APP_VERSION}`
-    });
-    (Store.data.fbq ||= {})[q.id] = (Store.data.fbq[q.id] || 0) + 1; Store.save();
-    close();
-    toast(fbConnected() ? (navigator.onLine === false ? 'Saved. It will send when you are back online.' : 'Thanks, feedback sent.') : 'Saved on this device. Sending is not set up yet.');
-    flushFeedback();
-    if (location.hash === '#/test') renderTest();
+  const copy = d.querySelector('#fb-copy');
+  if (copy) copy.onclick = async () => {
+    const i = d.querySelector('#fb-ref');
+    try { await navigator.clipboard.writeText(i.value); toast('Copied.'); } catch { i.focus(); i.select(); toast('Select the text and copy it.'); }
   };
-  document.body.appendChild(d); d.querySelector('#fb-cat').focus();
+  document.body.appendChild(d); (d.querySelector('a.btn') || d.querySelector('button')).focus();
 }
 
 // ---------- router ----------
@@ -236,7 +208,7 @@ function renderTest() {
       <button id="prev" ${t.idx ? '' : 'disabled'}>← Prev</button>
       <button id="next" ${t.idx < t.qids.length - 1 ? '' : 'disabled'}>Next →</button>
       <button class="flagbtn ${st && st.flagged ? 'on' : ''}" id="flag">⚑ Flag</button>
-      <button id="fbk" title="Report a problem or suggest a change to this question">✎ Feedback${Store.data.fbq && Store.data.fbq[id] ? ' ✓' : ''}</button>
+      <button id="fbk" title="Report a problem or suggest a change to this question">✎ Feedback</button>
       <span style="flex:1"></span><button class="danger" id="end">End test</button>
     </div>
     <details style="margin-top:12px"><summary>Notes</summary><textarea id="note" rows="3" placeholder="Your notes on this question">${esc(st ? st.note : '')}</textarea></details>
@@ -278,7 +250,7 @@ function bindTest(t, q) {
   const on = (i, fn) => { const e = document.getElementById(i); if (e) e.onclick = fn; };
   on('prev', () => go(t.idx - 1)); on('next', () => go(t.idx + 1));
   on('submit', submit); on('flag', () => { Store.toggleFlag(id); renderTest(); });
-  on('fbk', () => feedbackDialog(q, t.answers[id]));
+  on('fbk', () => feedbackDialog(q));
   on('end', async () => { if (await ask('End this test now? Unanswered questions count as incorrect.', 'End test')) finish(); });
   document.getElementById('note').onchange = e => Store.setNote(id, e.target.value);
   function submit() {
@@ -337,10 +309,10 @@ function review(id) {
       ${q.options.map(o => `<div class="opt ${o.id === q.answer ? 'correct' : o.id === mine ? 'wrong' : ''}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}</span></div>`).join('')}
       ${q.image ? `<img class="qimg" data-zoom src="${esc(q.image)}" alt="${esc(q.imageAlt || '')}" title="Tap to enlarge">` : ''}
       <div class="expl">${esc(q.explanation)}${notesText(q)}</div>
-      <div class="row" style="margin-top:10px"><button data-fb="${esc(qid)}" title="Report a problem or suggest a change to this question">✎ Feedback${Store.data.fbq && Store.data.fbq[qid] ? ' ✓' : ''}</button></div></div>`;
+      <div class="row" style="margin-top:10px"><button data-fb="${esc(qid)}" title="Report a problem or suggest a change to this question">✎ Feedback</button></div></div>`;
   }).join('');
   bindZoom();
-  $app.querySelectorAll('[data-fb]').forEach(b => b.onclick = () => feedbackDialog(bank.byId[b.dataset.fb], r.answers[b.dataset.fb]));
+  $app.querySelectorAll('[data-fb]').forEach(b => b.onclick = () => feedbackDialog(bank.byId[b.dataset.fb]));
 }
 
 function history() {
@@ -355,10 +327,8 @@ function settings() {
   $app.innerHTML = `<div class="card"><h2>Settings</h2>
     <p>Theme <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
     <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label></div>
-    <div class="card"><h3>Feedback</h3><p class="muted">${fbConnected() ? 'Question feedback is sent to the program team.' : 'Question feedback is saved on this device. Sending has not been set up yet.'} Waiting to send: <b id="fbn">${fbQueue().length}</b></p>${fbConnected() && fbQueue().length ? '<button id="fbsend">Send now</button>' : ''}</div>
     <div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
     <div class="row"><button id="exp">Export progress</button><button id="imp">Import progress</button><input type="file" id="file" accept="application/json" hidden><button class="danger" id="reset">Reset all progress</button></div></div>`;
-  const fbs = document.getElementById('fbsend'); if (fbs) fbs.onclick = async () => { await flushFeedback(); document.getElementById('fbn').textContent = fbQueue().length; toast(fbQueue().length ? 'Could not send yet. Check your connection.' : 'Sent.'); };
   document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.save(); };
   document.getElementById('theme').onchange = e => { Store.data.settings.theme = e.target.value; Store.save(); applyTheme(); };
   document.getElementById('exp').onclick = () => {
@@ -374,5 +344,5 @@ function settings() {
 
 // ---------- boot ----------
 applyTheme();
-load().then(() => { route(); flushFeedback(); }).catch(e => { $app.innerHTML = `<div class="card"><b>Could not load question data.</b><p class="muted">${esc(e.message)}. If you opened this file directly, serve it over http (e.g. <code>python3 -m http.server</code>) or use GitHub Pages.</p></div>`; });
+load().then(route).catch(e => { $app.innerHTML = `<div class="card"><b>Could not load question data.</b><p class="muted">${esc(e.message)}. If you opened this file directly, serve it over http (e.g. <code>python3 -m http.server</code>) or use GitHub Pages.</p></div>`; });
 if ('serviceWorker' in navigator && !window.__QBANK_DATA && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
