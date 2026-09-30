@@ -40,13 +40,28 @@ Nobody can see anything until their email is on this list. Removing an email fro
 
 ## 4. Create the accounts
 
-For a pilot the simplest way is to create accounts yourself and share passwords privately, because it does not depend on email delivery.
+There are two ways. The first means you never need to open Supabase to add a person.
+
+### A. From the app (recommended): Admin > Approved emails > Add member
+
+You set this up once (about 5 minutes), because creating logins needs a secret key that must stay on Supabase's servers and never in the website:
+
+1. In Supabase click **Edge Functions** in the left menu, then **Deploy a new function** > **Via Editor**.
+2. Name it exactly `member-admin`.
+3. On GitHub open `qbank/supabase/functions/member-admin/index.ts`, click **Copy raw file**, and paste it over everything in the editor. Click **Deploy**.
+4. Open the function's **Settings** (or **Details**) and turn **off** "Verify JWT with legacy secret" (the function checks that the caller is an administrator itself). Save.
+
+After that, in the app: **Admin > Approved emails**, type the person's email, choose role and plan, click **Add member**. The app shows a temporary password once, with a message you can copy and send privately. The person is asked to choose their own password the first time they sign in. **Reset password** on any row makes a new temporary password (for someone who is locked out). No email service is needed.
+
+If you skip this, **Add member** still approves the email, but you must create the login yourself with option B.
+
+### B. In Supabase, by hand
 
 1. Left menu: **Authentication** > **Users** > **Add user** > **Create new user**.
 2. Enter the email and a password. **Tick "Auto Confirm User".** Click **Create user**.
-3. Give each person their password privately and tell them to keep it. They can reset it later with **Forgot password** once step 6 is done.
+3. Give each person their password privately. They can reset it later with **Forgot password** once step 6 is done.
 
-(Instead of creating accounts, you can use **Invite user**, which emails a link that opens a "choose a password" screen in the app. Supabase's built-in email is limited to a few messages an hour, so for more than a handful of people set up your own email service under **Authentication > Emails > SMTP settings** first.)
+(**Invite user** emails a link instead. Supabase's built-in email is limited to a few messages an hour, and may only reach your own team, so set up your own email service under **Authentication > Emails > SMTP settings** first if you use it.)
 
 ## 5. Lock down sign-up
 
@@ -143,7 +158,7 @@ If something fails, tell me exactly what you saw (a screenshot helps) and I will
 
 ## Everyday tasks
 
-**Approve, change or remove a person:** use **Admin > Approved emails** in the app (or Table Editor > `allowed_emails`). Removing an email blocks them at once. Creating the account itself is still done under Authentication > Users (step 4), because creating logins needs Supabase's own tools. To delete an account entirely, also delete it there.
+**Add, change or remove a person:** use **Admin > Approved emails** in the app. **Add member** creates the account (step 4A). Removing an email blocks them at once. To delete an account entirely, also delete it under Authentication > Users.
 
 **A resident forgot their password:** they use **Forgot password** on the sign-in screen (needs email set up), or you set a new one for them under Authentication > Users. Everyone can change their own password in **Settings**.
 

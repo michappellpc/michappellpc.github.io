@@ -453,7 +453,7 @@ function renderSignIn(note = '') {
 function renderSetPassword(kind) {
   pageTitle('Choose a password');
   ready = false; lockUI(true);
-  $app.innerHTML = `<div class="card signin"><h2>${kind === 'invite' ? 'Welcome. Choose a password' : 'Choose a new password'}</h2>
+  $app.innerHTML = `<div class="card signin"><h2>${kind === 'invite' || kind === 'temp' ? 'Welcome. Choose your own password' : 'Choose a new password'}</h2>${kind === 'temp' ? '<p class="muted">You signed in with a temporary password. Choose one only you know.</p>' : ''}
     <form id="sp"><label for="sp-1">New password (at least 8 characters)</label><input id="sp-1" type="password" autocomplete="new-password" minlength="8" required>
     <label for="sp-2">Type it again</label><input id="sp-2" type="password" autocomplete="new-password" minlength="8" required>
     <p class="notice" id="sp-err" hidden></p><div class="row"><button class="primary" type="submit" id="sp-go">Save password</button></div></form></div>`;
@@ -462,7 +462,7 @@ function renderSetPassword(kind) {
     const a = document.getElementById('sp-1').value, b = document.getElementById('sp-2').value;
     if (a !== b) { err.textContent = 'The two passwords do not match.'; err.hidden = false; return; }
     go.disabled = true;
-    try { await Cloud.setPassword(a); await startSession(); } catch (x) { err.textContent = x.message; err.hidden = false; go.disabled = false; }
+    try { await (kind === 'temp' ? Cloud.choosePassword(a) : Cloud.setPassword(a)); await startSession(); } catch (x) { err.textContent = x.message; err.hidden = false; go.disabled = false; }
   };
 }
 
@@ -480,6 +480,7 @@ function renderBlocked(email) {
 async function startSession() {
   ready = false; lockUI(true);
   $app.innerHTML = '<div class="card"><p class="muted">Loading your questions...</p></div>';
+  if (Cloud.mustChangePassword) return renderSetPassword('temp');
   try {
     Store.use(Cloud.userKey()); applyTheme();
     profile = await Cloud.profile();
@@ -532,14 +533,14 @@ async function adminPage() {
         <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Members and their activity</caption><thead><tr><th scope="col">Email</th><th scope="col">Access</th><th scope="col">Answered</th><th scope="col">Correct</th><th scope="col">Last active</th></tr></thead><tbody>${mem.map(m =>
         `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.role === 'reviewer' ? 'Reviewer' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><h2>Approved emails</h2>
-        <p class="muted">Only these emails can use the app. <b>Reviewers</b> can edit and review questions but cannot see members. Approving an email does not create the account: also add the person under Authentication &gt; Users in Supabase (see the setup guide). Removing an email locks that person out at once.</p>
+        <p class="muted">Only these emails can use the app. <b>Reviewers</b> can edit and review questions but cannot see members. <b>Add member</b> approves the email and creates their account with a temporary password for you to send them privately; they choose their own password the first time they sign in. Removing an email locks that person out at once.</p>
         <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Approved emails</caption><thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Plan</th><th scope="col">Note</th><th scope="col"><span class="sr">Actions</span></th></tr></thead><tbody id="al">${allowed.map(r =>
         `<tr><td>${esc(r.email)}</td><td>${esc(r.role)}</td><td><select data-plan="${esc(r.email)}" aria-label="Plan for ${esc(r.email)}"><option${r.plan === 'pro' ? ' selected' : ''}>pro</option><option${r.plan === 'free' ? ' selected' : ''}>free</option></select></td><td>${esc(r.note || '')}</td>
-        <td>${r.email === me ? '<span class="muted">you</span>' : `<button data-rm="${esc(r.email)}" aria-label="Remove ${esc(r.email)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>
+        <td>${r.email === me ? '<span class="muted">you</span>' : `<button data-reset="${esc(r.email)}" aria-label="Reset password for ${esc(r.email)}">Reset password</button> <button data-rm="${esc(r.email)}" aria-label="Remove ${esc(r.email)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>
         <form id="addem" class="row" style="margin-top:12px;align-items:flex-end"><div><label for="ae-email">Email</label><input id="ae-email" type="email" required autocomplete="off"></div>
           <div><label for="ae-role">Role</label><select id="ae-role"><option>member</option><option>reviewer</option><option>admin</option></select></div>
           <div><label for="ae-plan">Plan</label><select id="ae-plan"><option>pro</option><option>free</option></select></div>
-          <div><label for="ae-note">Note</label><input id="ae-note" type="text" maxlength="80" autocomplete="off"></div><button class="primary" type="submit">Approve</button></form>
+          <div><label for="ae-note">Note</label><input id="ae-note" type="text" maxlength="80" autocomplete="off"></div><button class="primary" type="submit">Add member</button></form>
         <p class="notice" id="ae-msg" hidden role="alert"></p></div>
       <div class="card"><h2>Hardest questions</h2>${hard.length ? `<div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Questions with the lowest percent correct</caption><thead><tr><th scope="col">Question</th><th scope="col">Subject</th><th scope="col">Answered</th><th scope="col">Correct</th></tr></thead><tbody>${hard.map(q =>
         `<tr><td>${esc(q.question_id)}</td><td>${esc(q.subject)}</td><td>${q.attempts}</td><td>${Math.round(q.pct_correct)}%</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Shows up once questions have been answered at least 3 times.</p>'}</div>`;
@@ -555,9 +556,21 @@ async function adminPage() {
       e.preventDefault(); say('');
       const email = document.getElementById('ae-email').value.trim().toLowerCase(), role = document.getElementById('ae-role').value;
       if (email === me && role !== 'admin') return say('You cannot take away your own admin access.');
-      try { await upsert({ email, role, plan: document.getElementById('ae-plan').value, note: document.getElementById('ae-note').value.trim() || null }); toast('Approved ' + email); adminPage(); }
-      catch (x) { say(x.offline ? 'No connection.' : 'Could not save: ' + x.message); }
+      const plan = document.getElementById('ae-plan').value, note = document.getElementById('ae-note').value.trim() || null;
+      try {
+        try { const r = await Cloud.manageMember('create', { email, role, plan, note }); await showCredentials(r); adminPage(); return; }
+        catch (x) {
+          if (!x.notDeployed) throw x;
+          await upsert({ email, role, plan, note }); adminPage();          // account tools not deployed: fall back to approving only
+          toast(`Approved ${email}. Creating the account itself still needs Supabase (see the setup guide, step 4).`);
+        }
+      } catch (x) { say(x.offline ? 'No connection.' : 'Could not add: ' + x.message); }
     };
+    $app.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
+      const em = b.dataset.reset; if (!(await ask(`Make a new temporary password for ${em}? Their old password stops working.`, 'Reset password'))) return;
+      try { await showCredentials(await Cloud.manageMember('reset', { email: em })); }
+      catch (x) { say(x.notDeployed ? 'Account tools are not set up yet (see the setup guide).' : x.offline ? 'No connection.' : x.message); }
+    });
     $app.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
       const em = b.dataset.rm; if (!(await ask(`Remove ${em}? They will be locked out immediately. Their saved progress is kept.`, 'Remove'))) return;
       try { await Cloud.rest('allowed_emails?email=eq.' + encodeURIComponent(em), { method: 'DELETE' }); toast('Removed ' + em); adminPage(); } catch (x) { say('Could not remove: ' + x.message); }
@@ -567,6 +580,26 @@ async function adminPage() {
       try { await upsert({ email: r.email, role: r.role, plan: s.value, note: r.note }); toast(`${r.email} is now ${s.value}`); } catch (x) { say('Could not change: ' + x.message); adminPage(); }
     });
   } catch (e) { $app.innerHTML = `<div class="card"><h2>Admin</h2><p class="muted">Could not load: ${esc(e.message)}</p></div>`; }
+}
+
+// Shows a new temporary password once, with a ready-to-send message.
+function showCredentials(r) {
+  return new Promise(res => {
+    const site = location.href.split('#')[0].replace(/index\.html$/, '');
+    const msg = r.existed ? `You have been approved for AeroMedQBank. Sign in here with your existing password: ${site}`
+      : `Your AeroMedQBank account is ready.\nWebsite: ${site}\nEmail: ${r.email}\nTemporary password: ${r.password}\nYou will be asked to choose your own password when you first sign in.`;
+    const d = document.createElement('div'); d.className = 'modal';
+    d.innerHTML = `<div class="card" role="dialog" aria-modal="true" aria-labelledby="cr-h" style="max-width:480px"><h3 id="cr-h" style="margin-top:0">${r.existed ? 'Already has an account' : 'Account ready'}</h3>
+      <p>${r.existed ? esc(r.email) + ' already has an account. They are approved now and can sign in with their current password.' : `Send this to <b>${esc(r.email)}</b> privately (not in a group chat). <b>The password is shown only now.</b> If it is lost, use Reset password.`}</p>
+      <label for="cr-msg">Message</label><textarea id="cr-msg" rows="6" readonly>${esc(msg)}</textarea>
+      <div class="row" style="margin-top:12px"><button class="primary" id="cr-copy">Copy message</button><button id="cr-done">Done</button></div></div>`;
+    document.body.appendChild(d);
+    const close = () => { d.remove(); res(); };
+    d.querySelector('#cr-done').onclick = close;
+    d.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    d.querySelector('#cr-copy').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Copied.'); } catch { const t = d.querySelector('#cr-msg'); t.select(); toast('Select the text and copy it.'); } };
+    d.querySelector('#cr-copy').focus();
+  });
 }
 
 // ---------- boot ----------
