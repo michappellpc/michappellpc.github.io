@@ -1,4 +1,4 @@
--- RAMQBank database. Run once in Supabase: SQL Editor -> New query -> paste this whole file -> Run.
+-- Ram QBank database. Run once in Supabase: SQL Editor -> New query -> paste this whole file -> Run.
 -- Safe to re-run: it only creates what is missing and replaces functions/policies.
 --
 -- The privacy model
@@ -12,7 +12,7 @@ create extension if not exists pgcrypto;
 -- ---------------------------------------------------------------- people
 create table if not exists public.allowed_emails (
   email    text primary key check (email = lower(email)),
-  role     text not null default 'member' check (role in ('member', 'reviewer', 'admin')),
+  role     text not null default 'member' check (role in ('member', 'admin')),
   plan     text not null default 'pro'    check (plan in ('free', 'pro')),
   note     text,
   added_at timestamptz not null default now()
@@ -22,7 +22,7 @@ create table if not exists public.profiles (
   id           uuid primary key references auth.users (id) on delete cascade,
   email        text not null,
   display_name text,
-  role         text not null default 'member' check (role in ('member', 'reviewer', 'admin')),
+  role         text not null default 'member' check (role in ('member', 'admin')),
   plan         text not null default 'free'   check (plan in ('free', 'pro')),
   active       boolean not null default false,
   created_at   timestamptz not null default now(),
@@ -47,18 +47,8 @@ create table if not exists public.questions (
   option_notes jsonb,
   refs        text[] not null default '{}',
   tier        text not null default 'pro' check (tier in ('free', 'pro')),
-  archived    boolean not null default false,        -- hidden from members, history kept, can be restored
-  updated_by  text,
   updated_at  timestamptz not null default now()
 );
-
--- Databases created before the reviewer role / archive existed are upgraded here (safe to re-run).
-alter table public.allowed_emails drop constraint if exists allowed_emails_role_check;
-alter table public.allowed_emails add constraint allowed_emails_role_check check (role in ('member', 'reviewer', 'admin'));
-alter table public.profiles drop constraint if exists profiles_role_check;
-alter table public.profiles add constraint profiles_role_check check (role in ('member', 'reviewer', 'admin'));
-alter table public.questions add column if not exists archived boolean not null default false;
-alter table public.questions add column if not exists updated_by text;
 
 -- ------------------------------------------------------- per-person data
 create table if not exists public.attempts (          -- one row per answered question; never edited
@@ -110,15 +100,10 @@ create or replace function public.is_admin() returns boolean
   language sql stable security definer set search_path = public as
 $$ select exists (select 1 from public.profiles where id = auth.uid() and active and role = 'admin') $$;
 
--- Admins and reviewers can edit questions; only admins see member information.
-create or replace function public.can_edit() returns boolean
-  language sql stable security definer set search_path = public as
-$$ select exists (select 1 from public.profiles where id = auth.uid() and active and role in ('admin', 'reviewer')) $$;
-
 create or replace function public.has_plan(t text) returns boolean
   language sql stable security definer set search_path = public as
 $$ select exists (select 1 from public.profiles p where p.id = auth.uid() and p.active
-                  and (t = 'free' or p.plan = 'pro' or p.role in ('admin', 'reviewer'))) $$;
+                  and (t = 'free' or p.plan = 'pro' or p.role = 'admin')) $$;
 
 -- ------------------------------------------- keep profiles in step with the allow list
 create or replace function public.handle_new_user() returns trigger
@@ -164,7 +149,6 @@ drop policy if exists allowed_admin      on public.allowed_emails;
 drop policy if exists profiles_read      on public.profiles;
 drop policy if exists questions_read     on public.questions;
 drop policy if exists questions_admin    on public.questions;
-drop policy if exists questions_edit     on public.questions;
 drop policy if exists attempts_read      on public.attempts;
 drop policy if exists attempts_insert    on public.attempts;
 drop policy if exists marks_own          on public.question_marks;
@@ -173,8 +157,8 @@ drop policy if exists settings_own       on public.user_settings;
 
 create policy allowed_admin   on public.allowed_emails for all    to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy profiles_read   on public.profiles       for select to authenticated using (id = auth.uid() or public.is_admin());
-create policy questions_read  on public.questions      for select to authenticated using (public.has_plan(tier) and not archived);
-create policy questions_edit  on public.questions      for all    to authenticated using (public.can_edit()) with check (public.can_edit());
+create policy questions_read  on public.questions      for select to authenticated using (public.has_plan(tier));
+create policy questions_admin on public.questions      for all    to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy attempts_read   on public.attempts       for select to authenticated using (user_id = auth.uid() and public.is_active());
 create policy attempts_insert on public.attempts       for insert to authenticated
   with check (user_id = auth.uid() and public.is_active() and at <= now() + interval '5 minutes');
@@ -202,40 +186,6 @@ drop policy if exists question_images_read on storage.objects;
 create policy question_images_read on storage.objects for select to authenticated
   using (bucket_id = 'question-images'
          and exists (select 1 from public.questions q where q.image = 'private:' || storage.objects.name));
-
-drop policy if exists question_images_edit on storage.objects;
-create policy question_images_edit on storage.objects for all to authenticated
-  using (bucket_id = 'question-images' and public.can_edit())
-  with check (bucket_id = 'question-images' and public.can_edit());
-
--- ------------------------------------------------ review integrity (who reviewed, and when it must be redone)
--- For a signed-in person (not the upload tool): the database, not the browser, records who saved and who reviewed,
--- and a reviewed question that is edited goes back to draft so it must be reviewed again.
-create or replace function public.questions_guard() returns trigger
-  language plpgsql security definer set search_path = public as
-$$
-declare who text;
-begin
-  new.updated_at := now();
-  if auth.uid() is null then                       -- the upload tool (service key)
-    if new.updated_by is null then new.updated_by := 'upload tool'; end if;
-    return new;
-  end if;
-  select email into who from public.profiles where id = auth.uid();
-  new.updated_by := who;
-  if tg_op = 'UPDATE' and old.status = 'reviewed' and new.status = 'reviewed'
-     and (new.stem, new.options, new.answer, new.explanation, new.option_notes, new.refs, new.image, new.image_alt, new.subject, new.boards, new.topic, new.difficulty)
-         is distinct from (old.stem, old.options, old.answer, old.explanation, old.option_notes, old.refs, old.image, old.image_alt, old.subject, old.boards, old.topic, old.difficulty)
-  then new.status := 'draft'; end if;
-  if new.status <> 'reviewed' then new.reviewed_by := null;
-  elsif tg_op = 'INSERT' or old.status <> 'reviewed' then new.reviewed_by := who;      -- whoever marks it reviewed
-  else new.reviewed_by := old.reviewed_by; end if;                                      -- nobody can rewrite it later
-  return new;
-end $$;
-
-drop trigger if exists questions_guard on public.questions;
-create trigger questions_guard before insert or update on public.questions
-  for each row execute function public.questions_guard();
 
 -- ---------------------------------------------------------------- functions the app calls
 create or replace function public.my_progress()
@@ -276,21 +226,19 @@ begin
     group by p.id order by p.email;
 end $$;
 
-drop function if exists public.admin_question_stats();
-create function public.admin_question_stats()
-  returns table (question_id text, subject text, status text, archived boolean, attempts bigint, correct bigint, pct_correct numeric)
+create or replace function public.admin_question_stats()
+  returns table (question_id text, subject text, status text, attempts bigint, correct bigint, pct_correct numeric)
   language plpgsql stable security definer set search_path = public as
 $$
 begin
-  if not public.can_edit() then raise exception 'editors only'; end if;
+  if not public.is_admin() then raise exception 'admins only'; end if;
   return query
-    select q.id, q.subject, q.status, q.archived, count(a.id), count(a.id) filter (where a.ok),
+    select q.id, q.subject, q.status, count(a.id), count(a.id) filter (where a.ok),
            case when count(a.id) = 0 then null else round(100.0 * count(a.id) filter (where a.ok) / count(a.id), 1) end
     from public.questions q left join public.attempts a on a.question_id = q.id
     group by q.id order by q.id;
 end $$;
 
-revoke execute on all functions in schema public from public, anon;
-grant execute on function public.is_active(), public.is_admin(), public.can_edit(), public.has_plan(text) to authenticated;
+grant execute on function public.is_active(), public.is_admin(), public.has_plan(text) to authenticated;
 grant execute on function public.my_progress(), public.touch_seen(), public.reset_my_progress() to authenticated;
 grant execute on function public.admin_member_summary(), public.admin_question_stats() to authenticated;

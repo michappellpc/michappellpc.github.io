@@ -17,5 +17,6 @@ create table if not exists storage.buckets (id text primary key, name text not n
 create table if not exists storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets (id), name text, unique (bucket_id, name));
 alter table storage.objects enable row level security;
 grant usage on schema storage to anon, authenticated, service_role;
-grant select on storage.objects, storage.buckets to authenticated;
+grant select, insert, update, delete on storage.objects to authenticated;
+grant select on storage.buckets to authenticated;
 grant all on storage.objects, storage.buckets to service_role;

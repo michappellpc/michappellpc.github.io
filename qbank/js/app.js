@@ -107,11 +107,11 @@ function feedbackDialog(q) {
 function route() {
   clearInterval(tick); $timer.hidden = true; Mascot.stop();
   if (Cloud.enabled && !ready) return;
-  const [p, arg] = location.hash.replace(/^#\/?/, '').split('/');
-  document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href') === '#/' + (p === 'test' ? 'create' : p === 'results' || p === 'review' ? 'history' : p)));
+  const [p, arg, arg2, arg3] = location.hash.replace(/^#\/?/, '').split('/');
+  document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href').split('/').slice(0, 2).join('/') === '#/' + (p === 'test' ? 'create' : p === 'results' || p === 'review' ? 'history' : p)));
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
-  ({ '': dashboard, create, history: historyPage, settings, admin: adminPage, results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
+  ({ '': dashboard, create, history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
@@ -369,7 +369,7 @@ function settings() {
     <p><label for="theme">Theme</label> <select id="theme" style="width:auto">${['auto', 'light', 'dark'].map(v => `<option ${v === th ? 'selected' : ''}>${v}</option>`).join('')}</select></p>
     <label class="chk"><input type="checkbox" id="drafts" ${showDrafts() ? 'checked' : ''}> Include draft questions that a physician has not yet reviewed</label></div>
     ${Cloud.enabled ? `<div class="card"><h3>Account</h3>
-      <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
+      <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.role === 'reviewer' ? 'Reviewer' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
       <p class="muted" id="syncline"></p>
       <div class="row"><button id="syncnow">Sync now</button><button id="signout">Sign out</button></div></div>
     <div class="card"><h3>Change password</h3>
@@ -488,7 +488,8 @@ async function startSession() {
   Store.hooks.settings = () => Cloud.queueSettings();
   Store.hooks.reset = () => Cloud.queueReset();
   lockUI(false); ready = true;
-  document.getElementById('nav-admin').hidden = profile.role !== 'admin';
+  const navAdmin = document.getElementById('nav-admin');
+  navAdmin.hidden = !Admin.isEditor(); navAdmin.textContent = profile.role === 'admin' ? 'Admin' : 'Questions'; navAdmin.setAttribute('href', profile.role === 'admin' ? '#/admin' : '#/admin/questions');
   location.hash = '#/'; route();
   Cloud.sync().then(() => { applyTheme(); if (ready && !Store.data.active && /^#?\/?$/.test(location.hash)) route(); }).catch(() => {});
 }
@@ -514,19 +515,19 @@ async function adminPage() {
     const act = mem.filter(m => m.active), tot = act.reduce((x, m) => x + m.attempts, 0), cor = act.reduce((x, m) => x + m.correct, 0);
     const hard = qs.filter(q => q.attempts >= 3).sort((x, y) => x.pct_correct - y.pct_correct).slice(0, 15);
     const me = Cloud.session.email.toLowerCase();
-    $app.innerHTML = `<div class="grid">
+    $app.innerHTML = `${Admin.tabs('overview')}<div class="grid">
       <div class="card stat"><b>${act.length}</b><span>Active members</span></div><div class="card stat"><b>${tot}</b><span>Questions answered</span></div>
       <div class="card stat"><b>${tot ? pct(cor, tot) + '%' : '-'}</b><span>Group correct</span></div><div class="card stat"><b>${qs.length}</b><span>Questions in bank</span></div></div>
       <div class="card"><div class="row spread"><h2 style="margin:0">Members</h2><button id="csv">Download CSV</button></div>
         <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Members and their activity</caption><thead><tr><th scope="col">Email</th><th scope="col">Access</th><th scope="col">Answered</th><th scope="col">Correct</th><th scope="col">Last active</th></tr></thead><tbody>${mem.map(m =>
-        `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
+        `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.role === 'reviewer' ? 'Reviewer' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><h2>Approved emails</h2>
-        <p class="muted">Only these emails can use the app. Approving an email does not create the account: also add the person under Authentication &gt; Users in Supabase (see the setup guide). Removing an email locks that person out at once.</p>
+        <p class="muted">Only these emails can use the app. <b>Reviewers</b> can edit and review questions but cannot see members. Approving an email does not create the account: also add the person under Authentication &gt; Users in Supabase (see the setup guide). Removing an email locks that person out at once.</p>
         <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Approved emails</caption><thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Plan</th><th scope="col">Note</th><th scope="col"><span class="sr">Actions</span></th></tr></thead><tbody id="al">${allowed.map(r =>
         `<tr><td>${esc(r.email)}</td><td>${esc(r.role)}</td><td><select data-plan="${esc(r.email)}" aria-label="Plan for ${esc(r.email)}"><option${r.plan === 'pro' ? ' selected' : ''}>pro</option><option${r.plan === 'free' ? ' selected' : ''}>free</option></select></td><td>${esc(r.note || '')}</td>
         <td>${r.email === me ? '<span class="muted">you</span>' : `<button data-rm="${esc(r.email)}" aria-label="Remove ${esc(r.email)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>
         <form id="addem" class="row" style="margin-top:12px;align-items:flex-end"><div><label for="ae-email">Email</label><input id="ae-email" type="email" required autocomplete="off"></div>
-          <div><label for="ae-role">Role</label><select id="ae-role"><option>member</option><option>admin</option></select></div>
+          <div><label for="ae-role">Role</label><select id="ae-role"><option>member</option><option>reviewer</option><option>admin</option></select></div>
           <div><label for="ae-plan">Plan</label><select id="ae-plan"><option>pro</option><option>free</option></select></div>
           <div><label for="ae-note">Note</label><input id="ae-note" type="text" maxlength="80" autocomplete="off"></div><button class="primary" type="submit">Approve</button></form>
         <p class="notice" id="ae-msg" hidden role="alert"></p></div>

@@ -11,5 +11,5 @@ const out = `<title>RAMQBank</title>\n<style>\n${css}\nbody{padding-inline:0}\n<
 <script>window.__QBANK_DATA=${safe(JSON.stringify(data))};</script>
 <script>\n${safe(r('js/store.js'))}\n</script>
 <script>\n${safe(r('js/cloud.js'))}\n</script>
-<script>\n${safe(r('js/mascot.js'))}\n</script>\n<script>\n${safe(r('js/app.js'))}\n</script>\n`;
+<script>\n${safe(r('js/qvalidate.js'))}\n</script>\n<script>\n${safe(r('js/mascot.js'))}\n</script>\n<script>\n${safe(r('js/admin.js'))}\n</script>\n<script>\n${safe(r('js/app.js'))}\n</script>\n`;
 fs.writeFileSync(process.argv[2] || 'preview.html', out);

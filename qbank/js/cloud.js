@@ -153,6 +153,33 @@ const Cloud = (() => {
     options: r.options, answer: r.answer, explanation: r.explanation, optionNotes: r.option_notes || undefined, references: r.refs || [], tier: r.tier
   });
 
+  const toEditorQuestion = r => ({ ...toQuestion(r), archived: !!r.archived, updatedAt: r.updated_at, updatedBy: r.updated_by || '' });
+  // app question -> database row. reviewed_by is deliberately not sent: the database records who reviewed.
+  const toRow = q => {
+    const row = { id: q.id, status: q.status, boards: q.boards, subject: q.subject, topic: q.topic || null, difficulty: q.difficulty || null, stem: q.stem,
+      image: q.image || null, image_alt: q.imageAlt || null, options: q.options, answer: q.answer, explanation: q.explanation, option_notes: q.optionNotes || null,
+      refs: q.references || [], tier: q.tier || 'pro' };
+    if (typeof q.archived === 'boolean') row.archived = q.archived;
+    return row;
+  };
+  const inList = ids => '(' + ids.map(i => '"' + String(i).replace(/"/g, '') + '"').join(',') + ')';
+  const missingColumn = e => e && e.status === 400 && /archived|updated_by/i.test(e.message);
+  async function allQuestions(filter) {                        // pages of 1000, oldest id first
+    const rows = []; let offset = 0;
+    for (;;) {
+      const page = await api(`/rest/v1/questions?select=*${filter}&order=id.asc&limit=1000&offset=${offset}`);
+      rows.push(...page); if (page.length < 1000) return rows; offset += 1000;
+    }
+  }
+  async function blobPost(path, file, retried = false) {
+    let res;
+    try { res = await fetch(cfg.url + path, { method: 'POST', body: file, headers: { apikey: cfg.key, Authorization: 'Bearer ' + await token(), 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'true' } }); }
+    catch (e) { throw e.auth ? e : offlineError(); }
+    if (res.status === 401 && !retried && session) { session.expires_at = 0; await refresh(); return blobPost(path, file, true); }
+    if (!res.ok) { let m = ''; try { m = (await res.json()).message || ''; } catch {} throw Object.assign(new Error(m || `Upload failed (${res.status})`), { status: res.status }); }
+    return true;
+  }
+
   return {
     get enabled() { return !!cfg; },
     get session() { return session; },
@@ -218,11 +245,9 @@ const Cloud = (() => {
     },
     async questions() {
       try {
-        const rows = []; let offset = 0;
-        for (;;) {
-          const page = await api(`/rest/v1/questions?select=*&order=id.asc&limit=1000&offset=${offset}`);
-          rows.push(...page); if (page.length < 1000) break; offset += 1000;
-        }
+        let rows;
+        try { rows = await allQuestions('&archived=eq.false'); }
+        catch (e) { if (!missingColumn(e)) throw e; rows = await allQuestions(''); }     // database not upgraded yet
         const list = rows.map(toQuestion);
         await cacheSet('questions', { uid: uid(), at: Date.now(), list });
         return list;
@@ -233,6 +258,18 @@ const Cloud = (() => {
         throw e;
       }
     },
+    // ---- for admins and reviewers (the database refuses everyone else) ----
+    async editorReady() { try { await api('/rest/v1/questions?select=archived,updated_by&limit=1'); return true; } catch (e) { if (missingColumn(e)) return false; throw e; } },
+    async editorQuestions() { return (await allQuestions('')).map(toEditorQuestion); },
+    async saveQuestions(list) {
+      for (let i = 0; i < list.length; i += 100)
+        await api('/rest/v1/questions?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: list.slice(i, i + 100).map(toRow) });
+    },
+    patchQuestions: (ids, patch) => api('/rest/v1/questions?id=in.' + encodeURIComponent(inList(ids)), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: patch }),
+    deleteQuestions: ids => api('/rest/v1/questions?id=in.' + encodeURIComponent(inList(ids)), { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+    async questionUpdatedAt(id) { const r = await api('/rest/v1/questions?select=updated_at&id=eq.' + encodeURIComponent(id)); return r && r[0] ? r[0].updated_at : null; },
+    async uploadImage(name, file) { await blobPost('/storage/v1/object/question-images/' + encodeURIComponent(name), file); this.forgetImage(name); },
+    forgetImage(name) { if (imageUrls.has(name)) { URL.revokeObjectURL(imageUrls.get(name)); imageUrls.delete(name); } kv('readwrite', s => s.delete('img:' + name)).catch(() => {}); },
     // Private pictures live in a private bucket; the database only releases one to someone who may see a question that uses it.
     async image(path) {
       if (imageUrls.has(path)) return imageUrls.get(path);

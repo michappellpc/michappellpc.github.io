@@ -4,7 +4,22 @@
 
 With accounts turned on (docs/CLOUD-SETUP.md), **real questions never go in the public repo.** Keep them in `qbank/private/`, which git ignores, and upload them to the private database with `node qbank/tools/push-questions.js`. The examples below use `data/questions/` for the public demo; for real work add `--data qbank/private` to the import, export and validate commands and save files under `qbank/private/questions/`.
 
-## The workflow
+## The easiest way: the Questions page in the app
+
+Sign in as an admin (or reviewer) and open **Admin > Questions**. With accounts turned on this is all most people need.
+
+1. **Draft** questions with Fable (prompt below).
+2. **Import**: click **Import from a chat**, paste Claude's whole reply (extra chatter and code fences are fine), and read the check results. Good questions are saved as **Draft**; ones with problems are listed with a plain reason and skipped.
+3. **Edit** any question: click its id, change the text, choices, picture or tags, and press Save. **Preview** shows what a member will see.
+4. **Review**: a physician opens the question, reads it against a reference, and sets Status to **Reviewed** (or selects several rows and uses **Mark reviewed**). Their email is recorded automatically and cannot be typed in. Editing the wording of a reviewed question sends it back to Draft.
+5. **Remove**: **Archive** hides a question from members but keeps everyone's history and lets you **Restore** it. **Delete permanently** is only offered for archived questions and needs the word DELETE typed, because it also erases members' history for that question.
+6. **Back up**: **Download backup** saves every question as one JSON file. Import it again (tick "Keep review status") to restore.
+
+Give physician reviewers the **reviewer** role (in **Admin > Approved emails**, or the `role` column of `allowed_emails`). They can use only the Questions page, and they never see member names or scores. Admins and reviewers can change questions; no one else can.
+
+The command-line steps below still work and are handy for big batches or for keeping a copy in a file.
+
+## The workflow (command line)
 
 1. **Draft** questions with Fable (prompt below), or write them yourselves.
 2. **Save** the JSON it returns as `qbank/private/questions/<name>.json` (`node qbank/tools/push-questions.js --init` creates the folder).
