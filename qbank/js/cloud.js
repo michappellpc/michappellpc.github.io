@@ -302,6 +302,19 @@ const Cloud = (() => {
         throw e;
       }
     },
+    // ---- group averages (aggregate numbers only; the database withholds a question until enough members have answered it) ----
+    async peerStats() {
+      try {
+        const rows = await api('/rest/v1/rpc/peer_stats', { method: 'POST', body: {} }), m = {};
+        (rows || []).forEach(r => { m[r.question_id] = { users: r.users, pct: Math.round(r.pct_correct) }; });
+        await cacheSet('peer', { uid: uid(), at: Date.now(), m }); return m;
+      } catch (e) {
+        if (e.offline) { const c = await cacheGet('peer'); return c && c.uid === uid() ? c.m : {}; }
+        return {};                                                          // database not upgraded yet, or a hiccup: just show no averages
+      }
+    },
+    async peerMin() { const r = await api('/rest/v1/rpc/peer_min_users', { method: 'POST', body: {} }); return typeof r === 'number' ? r : 10; },
+    async setPeerMin(n) { await api('/rest/v1/rpc/set_peer_min_users', { method: 'POST', body: { n } }); },
     // ---- lessons (members read reviewed ones; editors read and write all) ----
     async lessons() {
       try { const list = (await allLessons('&archived=eq.false')).map(toLesson); await cacheSet('lessons', { uid: uid(), at: Date.now(), list }); return list; }

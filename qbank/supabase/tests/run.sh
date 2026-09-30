@@ -258,4 +258,21 @@ eq  "a lesson picture follows the lesson to members" "1" "$(as a "select count(*
 eq  "a draft lesson's picture stays hidden"          "0" "$(as a "select count(*) from storage.objects where bucket_id='question-images' and name='lessondraft.png';")"
 eq  "marking a lesson reviewed records the reviewer" "rev@x" "$(as rev "update lessons set status='reviewed' where id='l-draft'; select reviewed_by from lessons where id='l-draft';" | tail -n 1)"
 eq  "editing a reviewed lesson sends it back to draft" "draft/none" "$(as admin "update lessons set status='reviewed' where id='l-free'; update lessons set title='Changed' where id='l-free'; select status||'/'||coalesce(reviewed_by,'none') from lessons where id='l-free';" | tail -n 1)"
+echo; echo "Group averages"
+root "insert into auth.users (id, email) select ('00000000-0000-0000-0001-' || lpad(g::text, 12, '0'))::uuid, 'peer' || g || '@site.com' from generate_series(1, 12) g;
+  update profiles set active = true where email like 'peer%@site.com';
+  insert into attempts (user_id, question_id, ok, client_id, at) select ('00000000-0000-0000-0001-' || lpad(g::text, 12, '0'))::uuid, 'q-free', g <= 8, 'p' || g, now() - interval '2 days' from generate_series(1, 12) g;
+  insert into attempts (user_id, question_id, ok, client_id, at) values ('00000000-0000-0000-0001-000000000009', 'q-free', true, 'p9b', now() - interval '1 day');
+  insert into attempts (user_id, question_id, ok, client_id, at) select ('00000000-0000-0000-0001-' || lpad(g::text, 12, '0'))::uuid, 'q-pro', true, 'r' || g, now() from generate_series(1, 4) g;" >/dev/null
+eq  "a member sees the group figure for a well-answered question" "13,69" "$(as a "select users||','||pct_correct from peer_stats() where question_id='q-free';")"
+eq  "only each person's first try counts (13 people, one had two tries)" "13" "$(as a "select users from peer_stats() where question_id='q-free';")"
+eq  "a question with too few people shows nothing"   "0" "$(as a "select count(*) from peer_stats() where question_id='q-pro';")"
+eq  "an unlisted person gets nothing"                "0" "$(as c "select count(*) from peer_stats();")"
+eq  "a free member gets figures for free questions only" "q-free" "$(as d "select string_agg(question_id, ',') from peer_stats();")"
+eq  "draft and archived questions have no figures"   "0" "$(as a "select count(*) from peer_stats() where question_id in ('q-draft','q-arch');")"
+eq  "a member cannot change the minimum"             "yes" "$(as a "select set_peer_min_users(5);" 2>&1 | grep -q 'admins only' && echo yes)"
+eq  "the minimum cannot go below 5"                  "yes" "$(as admin "select set_peer_min_users(2);" 2>&1 | grep -q 'from 5 to 1000' && echo yes)"
+eq  "raising the minimum hides small groups"         "0" "$(as admin "select set_peer_min_users(20); commit;" >/dev/null; as a "select count(*) from peer_stats();")"
+as admin "select set_peer_min_users(10); commit;" >/dev/null
+eq  "anonymous visitors cannot call it"              "yes" "$(as anon "select * from peer_stats();" 2>&1 | grep -q 'permission denied' && echo yes)"
 echo; echo "$PASS passed, $FAIL failed"; [[ $FAIL -eq 0 ]]

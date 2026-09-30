@@ -1,6 +1,6 @@
 'use strict';
 const $app = document.getElementById('app'), $timer = document.getElementById('timer');
-let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {}, lessons: [], lessonFiles: [] };
+let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {}, lessons: [], lessonFiles: [], peer: {} };
 const APP_VERSION = '1.3';
 let tick = null, ready = false, profile = null, refocus = null;
 
@@ -11,6 +11,9 @@ const fmt = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const boardName = id => (bank.boards.find(b => b.id === id) || {}).name || id;
 const isDraft = q => q.status !== 'reviewed';
+const peerLine = id => { const p = bank.peer && bank.peer[id]; return p ? `<span class="peer"><b>${p.pct}%</b> of members answered this correctly on their first try (${p.users} members)</span>` : ''; };
+let peerAt = 0;
+function refreshPeer() { if (!Cloud.enabled || Date.now() - peerAt < 300000) return; peerAt = Date.now(); Cloud.peerStats().then(m => { bank.peer = m; }); }
 const mascotOn = () => Store.data.settings.mascot !== false;
 const showDrafts = () => Store.data.settings.showDrafts !== false;
 const notesText = q => q.optionNotes ? '\n\nAnswer choices:\n' + q.options.filter(o => q.optionNotes[o.id]).map(o => esc(`${o.id}. ${q.optionNotes[o.id]}`)).join('\n') : '';
@@ -116,9 +119,10 @@ async function route() {
     if (location.hash.replace(/^#\/?/, '').split('/')[0] !== p) return;   // the person moved on while it loaded
   }
   document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href').split('/').slice(0, 2).join('/') === '#/' + (p === 'test' ? 'create' : p === 'lesson' ? 'lessons' : p === 'results' || p === 'review' ? 'history' : p)));
+  if (p === '' || p === 'results') refreshPeer();
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
-  ({ '': dashboard, create: () => create(arg), lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
+  ({ '': dashboard, create: () => create(arg), flagged: flaggedPage, lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
@@ -134,7 +138,8 @@ function dashboard() {
     if (!qs.length) continue;
     let cc = 0, ww = 0, seen = 0;
     qs.forEach(q => { const s = st[q.id]; if (s) { cc += s.correct; ww += s.wrong; if (s.seen) seen++; } });
-    rows.push(`<tr><td>${esc(b.name)}</td><td>${esc(subj)}</td><td>${seen}/${qs.length}</td><td>${cc + ww ? pct(cc, cc + ww) + '%' : '—'}</td>
+    let pu = 0, pc = 0; qs.forEach(q => { const g = bank.peer[q.id]; if (g) { pu += g.users; pc += g.users * g.pct; } });
+    rows.push(`<tr><td>${esc(b.name)}</td><td>${esc(subj)}</td><td>${seen}/${qs.length}</td><td>${cc + ww ? pct(cc, cc + ww) + '%' : '—'}</td><td>${pu ? Math.round(pc / pu) + '%' : '—'}</td>
       <td style="width:22%"><div class="bar"><i style="width:${pct(cc, cc + ww)}%"></i></div></td></tr>`);
   }
   const active = Store.data.active;
@@ -156,14 +161,29 @@ function dashboard() {
     <div class="card stat"><b>${bank.questions.length}</b><span class="muted">Questions in bank</span></div>
     <div class="card stat"><b>${used}</b><span class="muted">Used (${pct(used, bank.questions.length)}%)</span></div>
     <div class="card stat"><b>${c + w ? pct(c, c + w) + '%' : '—'}</b><span class="muted">Overall correct</span></div>
-    <div class="card stat"><b>${all.filter(s => s.flagged).length}</b><span class="muted">Flagged</span></div>
+    ${all.some(s => s.flagged) ? `<a class="card stat statlink" href="#/flagged"><b>${all.filter(s => s.flagged).length}</b><span class="muted">Flagged &rsaquo; review</span></a>` : `<div class="card stat"><b>0</b><span class="muted">Flagged</span></div>`}
   </div>
   <div class="card"><h2>Performance by subject</h2>
-    ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th><span class="sr">Progress</span></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
+    ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th title="Average of all members, first tries">Group</th><th><span class="sr">Progress</span></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
   `;
   document.getElementById('cover-text').innerHTML = `<h2 class="pagetitle">Dashboard</h2><p>${esc(headline)}</p><a class="btn primary" href="#/create">Create a new test</a>`;
   if (mascotOn()) Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 5 });
+}
+
+// ---------- flagged questions ----------
+function flaggedPage() {
+  pageTitle('Flagged questions');
+  const items = bank.questions.filter(q => { const s = Store.qstat(q.id); return s && s.flagged && (!isDraft(q) || showDrafts()); });
+  $app.innerHTML = `<div class="pagehead"><div><h2 class="pagetitle">Flagged questions</h2><p class="muted">${items.length ? `${items.length} question${items.length === 1 ? '' : 's'} you marked to come back to.` : 'Nothing flagged yet. Use the Flag button on any question.'}</p></div>
+    ${items.length ? '<button class="btn primary" id="fgo">Practice these questions</button>' : ''}</div>
+    ${items.length ? `<div class="card"><table><thead><tr><th scope="col">Question</th><th scope="col">Subject</th><th scope="col">Your note</th><th scope="col"><span class="sr">Actions</span></th></tr></thead><tbody>${items.map(q => { const s = Store.qstat(q.id); return `<tr><td>${esc(q.stem.slice(0, 110))}${q.stem.length > 110 ? '...' : ''}</td><td>${esc(q.subject)}</td><td>${esc(s.note || '')}</td><td><button data-unflag="${esc(q.id)}" aria-label="Remove the flag from this question">Unflag</button></td></tr>`; }).join('')}</tbody></table></div>` : ''}`;
+  const go = document.getElementById('fgo');
+  if (go) go.onclick = () => {
+    Store.data.active = { id: uid(), mode: 'tutor', qids: shuffle(items).map(q => q.id), answers: {}, struck: {}, revealed: {}, idx: 0, started: Date.now(), elapsed: 0, limit: 0 };
+    Store.save(); location.hash = '#/test';
+  };
+  $app.querySelectorAll('[data-unflag]').forEach(b => b.onclick = () => { Store.toggleFlag(b.dataset.unflag); flaggedPage(); });
 }
 
 // ---------- create test ----------
@@ -241,7 +261,7 @@ function renderTest() {
       return `<div class="optrow"><div class="${c}" data-opt="${esc(o.id)}" role="radio" aria-checked="${sel === o.id}" ${locked0 ? 'aria-disabled="true"' : ''} tabindex="${tab}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}${struck.includes(o.id) ? '<span class="sr"> (crossed out)</span>' : ''}${shown && o.id === q.answer ? '<span class="sr"> (correct answer)</span>' : ''}</span></div>
         ${shown ? '' : `<button class="x" data-strike="${esc(o.id)}" aria-pressed="${struck.includes(o.id)}" aria-label="Cross out choice ${esc(o.id)}" title="Cross out">✕</button>`}</div>`;
     }).join('')}</div>
-    ${shown ? `<div class="expl"><b>${sel === q.answer ? 'Correct' : 'Incorrect'}.</b> Correct answer: ${esc(q.answer)}.\n\n${esc(q.explanation)}${notesText(q)}${q.references && q.references.length ? `\n\n<span class="muted">References: ${q.references.map(esc).join('; ')}</span>` : ''}</div>` : ''}
+    ${shown ? `<div class="expl"><b>${sel === q.answer ? 'Correct' : 'Incorrect'}.</b> Correct answer: ${esc(q.answer)}.${peerLine(id) ? '\n' + peerLine(id) : ''}\n\n${esc(q.explanation)}${notesText(q)}${q.references && q.references.length ? `\n\n<span class="muted">References: ${q.references.map(esc).join('; ')}</span>` : ''}</div>` : ''}
     <div class="row" style="margin-top:14px">
       ${tutor && !shown ? `<button class="primary" id="submit" ${sel ? '' : 'disabled'}>Submit</button>` : ''}
       <button id="prev" ${t.idx ? '' : 'disabled'}>← Prev</button>
@@ -334,6 +354,10 @@ function finish() {
 }
 
 // ---------- results / review / history ----------
+function groupTile(r) {
+  const g = r.qids.map(q => bank.peer[q]).filter(Boolean); if (!g.length) return '';
+  return `<div class="stat"><b>${Math.round(g.reduce((a, x) => a + x.pct, 0) / g.length)}%</b><span class="muted">Group average on these questions (${g.length} of ${r.qids.length} have enough data)</span></div>`;
+}
 function results(id) {
   pageTitle('Results');
   const r = Store.data.tests.find(x => x.id === id); if (!r) return (location.hash = '#/history');
@@ -343,7 +367,7 @@ function results(id) {
   $app.innerHTML = `<div class="card"><div id="res-mascot"></div><h2>Results</h2>
     <div class="grid"><div class="stat"><b>${pct(r.correct, r.total)}%</b><span class="muted">${r.correct}/${r.total} correct</span></div>
     <div class="stat"><b>${fmt(r.seconds)}</b><span class="muted">Time</span></div>
-    <div class="stat"><b>${r.mode}</b><span class="muted">Mode</span></div></div></div>
+    <div class="stat"><b>${r.mode}</b><span class="muted">Mode</span></div>${groupTile(r)}</div></div>
     <div class="card"><h3>By subject</h3><table><tbody>${Object.entries(by).map(([s, o]) => `<tr><td>${esc(s)}</td><td>${o.c}/${o.n}</td><td>${pct(o.c, o.n)}%</td></tr>`).join('')}</tbody></table></div>
     <a class="btn primary" href="#/review/${r.id}">Review questions</a> <a class="btn" href="#/create">New test</a>`;
   if (mascotOn()) Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding. That is board-ready work.' } : p >= 60 ? { pose: 'happy', msg: 'Solid work. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough exercise. Review makes it stick, and I\'m with you for the next rep.' });
@@ -359,7 +383,7 @@ function review(id) {
       <p class="stem">${esc(q.stem)}</p>
       ${q.options.map(o => `<div class="opt ${o.id === q.answer ? 'correct' : o.id === mine ? 'wrong' : ''}"><span class="k">${esc(o.id)}.</span><span class="txt">${esc(o.text)}</span></div>`).join('')}
       ${imgTag(q)}
-      <div class="expl">${esc(q.explanation)}${notesText(q)}</div>
+      <div class="expl">${peerLine(qid) ? peerLine(qid) + '\n\n' : ''}${esc(q.explanation)}${notesText(q)}</div>
       <div class="row" style="margin-top:10px"><button data-fb="${esc(qid)}" title="Report a problem or suggest a change to this question">✎ Feedback</button></div></div>`;
   }).join('');
   bindZoom();
@@ -524,6 +548,7 @@ async function startSession() {
     if (!profile || !profile.active) return renderBlocked(Cloud.session.email);
     setQuestions(await Cloud.questions());
     bank.lessons = await Cloud.lessons().catch(() => []);
+    bank.peer = await Cloud.peerStats(); peerAt = Date.now();
     Cloud.prefetchImages(bank.questions.filter(privImg).map(privImg));   // in the background, so pictures also work offline
   } catch (e) {
     if (e.auth) return renderSignIn('Please sign in again.');
@@ -560,7 +585,7 @@ async function adminPage() {
   if (!profile || profile.role !== 'admin') { $app.innerHTML = '<div class="card"><h2>Admin</h2><p class="muted">This page is for administrators.</p></div>'; return; }
   $app.innerHTML = '<div class="card"><p class="muted">Loading the group summary...</p></div>';
   try {
-    const [mem, qs, allowed, signupOn] = await Promise.all([Cloud.rpc('admin_member_summary'), Cloud.rpc('admin_question_stats'), Cloud.rest('allowed_emails?select=*&order=email.asc'), Cloud.signupOpen()]);
+    const [mem, qs, allowed, signupOn, peerMin] = await Promise.all([Cloud.rpc('admin_member_summary'), Cloud.rpc('admin_question_stats'), Cloud.rest('allowed_emails?select=*&order=email.asc'), Cloud.signupOpen(), Cloud.peerMin().catch(() => 10)]);
     const act = mem.filter(m => m.active), tot = act.reduce((x, m) => x + m.attempts, 0), cor = act.reduce((x, m) => x + m.correct, 0);
     const hard = qs.filter(q => q.attempts >= 3).sort((x, y) => x.pct_correct - y.pct_correct).slice(0, 15);
     const me = Cloud.session.email.toLowerCase();
@@ -570,6 +595,10 @@ async function adminPage() {
       <div class="card"><div class="row spread"><h2 style="margin:0">Members</h2><button id="csv">Download CSV</button></div>
         <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Members and their activity</caption><thead><tr><th scope="col">Email</th><th scope="col">Access</th><th scope="col">Answered</th><th scope="col">Correct</th><th scope="col">Last active</th></tr></thead><tbody>${mem.map(m =>
         `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.role === 'reviewer' ? 'Reviewer' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="card"><h2>Group averages</h2>
+        <form id="peerf" class="row" style="align-items:flex-end"><div><label for="pm">Show a group average once this many members have answered a question</label><input id="pm" type="number" min="5" max="1000" value="${peerMin}"></div><button class="primary" type="submit">Save</button></form>
+        <p class="muted">Members then see "72% of members answered this correctly" after they answer, in their results and in the subject table. Each member's first try counts. Nothing is shown for fewer than 5 people, so no one can be singled out.</p>
+        <p class="notice" id="pm-msg" hidden role="alert"></p></div>
       <div class="card"><h2>Sign-up</h2><label class="chk"><input type="checkbox" id="su-open"${signupOn ? ' checked' : ''}> Let anyone create a free account on the sign-in page</label>
         <p class="muted">Anyone who signs up gets a <b>free</b> member account at once and appears in the list below, so you can upgrade or remove them. Free accounts only see questions set to <b>Free members too</b>; questions set to Pro members stay private. Turn this off to make the site invitation-only.</p></div>
       <div class="card"><h2>Approved emails</h2>
@@ -615,6 +644,11 @@ async function adminPage() {
       const em = b.dataset.rm; if (!(await ask(`Remove ${em}? They will be locked out immediately. Their saved progress is kept.`, 'Remove'))) return;
       try { await Cloud.rest('allowed_emails?email=eq.' + encodeURIComponent(em), { method: 'DELETE' }); toast('Removed ' + em); adminPage(); } catch (x) { say('Could not remove: ' + x.message); }
     });
+    document.getElementById('peerf').onsubmit = async e => {
+      e.preventDefault(); const m = document.getElementById('pm-msg'); m.hidden = true;
+      try { await Cloud.setPeerMin(parseInt(document.getElementById('pm').value, 10)); toast('Saved.'); }
+      catch (x) { m.textContent = x.offline ? 'No connection.' : /from 5 to 1000/.test(x.message) ? 'Choose a number from 5 to 1000.' : 'Could not save: ' + x.message; m.hidden = false; }
+    };
     document.getElementById('su-open').onchange = async e => {
       try { await Cloud.setSignupOpen(e.target.checked); toast(e.target.checked ? 'Anyone can now create a free account.' : 'Sign-up is closed. Only people you add can get in.'); }
       catch (x) { e.target.checked = !e.target.checked; say('Could not change: ' + (x.offline ? 'no connection' : x.message)); }

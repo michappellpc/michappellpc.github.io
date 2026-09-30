@@ -374,9 +374,47 @@ begin
     group by q.id order by q.id;
 end $$;
 
+-- ------------------------------------------------------------ group averages (like the percentages UWorld shows)
+-- Only aggregate numbers leave the database, and only for a question that at least N different active members have answered.
+-- N is chosen by an admin and can never go below 5, so a number can never point at one person. Each member's FIRST try counts.
+insert into public.app_settings (key, value) values ('peer_min_users', '10') on conflict (key) do nothing;
+
+create or replace function public.peer_min_users() returns int
+  language sql stable security definer set search_path = public as
+$$ select greatest(5, coalesce((select (value)::text::int from public.app_settings where key = 'peer_min_users'), 10)) $$;
+
+create or replace function public.set_peer_min_users(n int) returns void
+  language plpgsql security definer set search_path = public as
+$$
+begin
+  if not public.is_admin() then raise exception 'admins only'; end if;
+  if n < 5 or n > 1000 then raise exception 'choose a number from 5 to 1000'; end if;
+  insert into public.app_settings (key, value) values ('peer_min_users', to_jsonb(n))
+    on conflict (key) do update set value = excluded.value;
+end $$;
+
+create or replace function public.peer_stats() returns table (question_id text, users int, pct_correct numeric)
+  language plpgsql stable security definer set search_path = public as
+$$
+begin
+  if not public.is_active() then return; end if;
+  return query
+  with first_try as (
+    select distinct on (a.user_id, a.question_id) a.user_id, a.question_id as qid, a.ok
+    from public.attempts a join public.profiles p on p.id = a.user_id and p.active
+    order by a.user_id, a.question_id, a.at, a.id
+  )
+  select f.qid, count(*)::int, round(100.0 * count(*) filter (where f.ok) / count(*), 0)
+  from first_try f join public.questions q on q.id = f.qid
+  where not q.archived and q.status = 'reviewed' and public.has_plan(q.tier)
+  group by f.qid having count(*) >= public.peer_min_users();
+end $$;
+
 revoke execute on all functions in schema public from public, anon;
 grant execute on function public.is_active(), public.is_admin(), public.can_edit(), public.has_plan(text) to authenticated;
 grant execute on function public.my_progress(), public.touch_seen(), public.reset_my_progress() to authenticated;
 grant execute on function public.admin_member_summary(), public.admin_question_stats() to authenticated;
 grant execute on function public.signup_open() to anon, authenticated;
+grant execute on function public.peer_stats(), public.peer_min_users() to authenticated;
+grant execute on function public.set_peer_min_users(int) to authenticated;
 grant execute on function public.set_signup_open(boolean) to authenticated;

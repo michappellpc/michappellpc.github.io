@@ -26,6 +26,9 @@ The app is installable ("Add to Home Screen") and works offline after the first 
 ## Cover picture
 The dashboard cover is a built-in vector illustration. To use your own photo instead, put an image (JPEG or WebP, about 1600 px wide, one you have the right to use) in `qbank/img/` and set `"coverImage": "img/your-photo.jpg"` in `data/config.json`. Government photos from DVIDS are usually free to use, but check each photo's terms.
 
+## Group averages and flags
+After a member answers a question they see how many members got it right on their first try, and the same average appears in results, review and the subject table. The database only releases a figure once at least N members (set in Admin, never below 5) have answered, so no individual can be identified. Members can flag any question and review flagged questions from the dashboard's Flagged tile.
+
 ## Lessons
 The **Lessons** tab has short teaching pages per subject with tables, charts, step flows and comparisons, plus a button to practice questions in that subject. Admins and reviewers write, preview, import and publish them under **Admin > Lessons** (`js/adminlessons.js`, renderer in `js/lessons.js`, rules in `js/lvalidate.js`). See **docs/LESSON-GUIDE.md**, including a ready-made prompt for drafting lessons. Sample lessons (unreviewed drafts) are in `data/lessons/`.
 
