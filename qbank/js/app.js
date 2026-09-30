@@ -90,7 +90,34 @@ function toast(msg) {
   const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg;
   document.body.appendChild(t); setTimeout(() => t.remove(), 3200);
 }
+// Accounts are on: the message goes to the team's Admin > Inbox (queued offline, sent when there is a connection).
+function feedbackInApp(q) {
+  const ref = `${q.id} (${q.subject}${q.topic ? ' / ' + q.topic : ''})`;
+  const d = document.createElement('div'); d.className = 'modal';
+  d.innerHTML = `<div class="card fb" role="dialog" aria-modal="true" aria-labelledby="fb-h"><h2 id="fb-h">Message the team about this question</h2>
+    <p class="muted">${esc(ref)}</p>
+    <form id="fb-form" novalidate><label for="fb-cat">What is it about?</label><select id="fb-cat">${FB_CATEGORIES.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</select>
+      <label for="fb-msg">Your message</label><textarea id="fb-msg" rows="5" required minlength="10" maxlength="1500" placeholder="What should be fixed or improved? If you think the answer is wrong, say what you think is right and why."></textarea>
+      <p class="muted small">Sent to the site's editors. Only administrators can see your email. Please do not include patient information.</p>
+      <p class="notice" id="fb-err" hidden role="alert"></p>
+      <div class="row"><button class="primary" type="submit">Send</button><button type="button" data-cancel>Cancel</button></div></form></div>`;
+  const close = () => { d.remove(); document.removeEventListener('keydown', onKey, true); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey, true);
+  d.onclick = e => { if (e.target === d || e.target.hasAttribute('data-cancel')) close(); };
+  d.querySelector('#fb-form').onsubmit = e => {
+    e.preventDefault(); const msg = d.querySelector('#fb-msg').value.trim(), err = d.querySelector('#fb-err');
+    if (msg.length < 10) { err.textContent = 'Please write a little more so the team can act on it (at least 10 characters).'; err.hidden = false; return; }
+    Cloud.queueFeedback({ question_id: q.id, category: d.querySelector('#fb-cat').value, message: msg, context: ref.slice(0, 300) });
+    Cloud.sync().catch(() => {});
+    close(); toast(navigator.onLine === false ? 'Saved. It will send when you are back online.' : 'Thanks. Your message was sent to the team.');
+  };
+  document.body.appendChild(d); d.querySelector('#fb-cat').focus();
+}
+
+const FB_CATEGORIES = [['wrong-answer', 'The answer or explanation looks wrong'], ['unclear', 'The question is unclear'], ['typo', 'Typo or wording'], ['picture', 'Picture problem'], ['other', 'Something else']];
 function feedbackDialog(q) {
+  if (Cloud.enabled) return feedbackInApp(q);
   const url = formUrl(), ref = `${q.id} (${q.subject}${q.topic ? ' / ' + q.topic : ''})`;
   const d = document.createElement('div'); d.className = 'modal';
   d.innerHTML = `<div class="card fb" role="dialog" aria-label="Question feedback">
@@ -158,8 +185,13 @@ function focusAreas() {
         ${lessons.length ? `<ul class="focus-lessons">${lessons.slice(0, 3).map(l => `<li><a href="#/lesson/${encodeURIComponent(l.id)}">${esc(l.title)}</a></li>`).join('')}</ul>${lessons.length > 3 ? `<p class="small"><a href="#/lessons/${encodeURIComponent(o.subject)}">All ${lessons.length} lessons in this subject</a></p>` : ''}` : '<p class="muted small">No lesson for this subject yet.</p>'}
         <a class="btn" href="#/create/${encodeURIComponent(o.subject)}/incorrect">Practice the ones you missed</a></section>`;
     }).join('')}</div>`;
-  } else if (answered >= FOCUS_MIN * 2) body = '<p class="muted">No weak spots right now: every subject you have practised is at 80% or better. Keep going.</p>';
-  else body = `<p class="muted">Answer at least ${FOCUS_MIN} questions in a subject and your weakest ones will show up here, with lessons to review.</p>`;
+  } else if (Object.values(by).some(o => o.right + o.wrong >= FOCUS_MIN)) body = '<p class="muted">No weak spots right now: every subject you have practised is at 80% or better. Keep going.</p>';
+  else {                                                     // not enough answers yet: show the feature and how close they are
+    const most = Math.max(0, ...Object.values(by).map(o => o.right + o.wrong)), need = FOCUS_MIN - most;
+    body = `<p><b>Need ${need} more question${need === 1 ? '' : 's'}</b> in one subject until your focus areas appear.</p>
+      <div class="bar" role="progressbar" aria-label="Progress toward focus areas" aria-valuemin="0" aria-valuemax="${FOCUS_MIN}" aria-valuenow="${most}"><i style="width:${pct(most, FOCUS_MIN)}%"></i></div>
+      <p class="muted small" style="margin-top:8px">Once you have answered ${FOCUS_MIN} questions in a subject, this section shows your weakest subjects, the topics you miss most, and the lessons to review, with a button to practice the questions you missed.</p>`;
+  }
   return `<div class="card" id="focus"><h2>Focus areas</h2>${body}</div>`;
 }
 
@@ -595,6 +627,12 @@ function renderBlocked(email) {
   document.getElementById('bo').onclick = () => signOut();
 }
 
+let badgeTimer = null;
+async function refreshInboxBadge() {                       // the red number on the Admin menu item: messages nobody has looked at yet
+  if (!Cloud.enabled || !profile || !Admin.isEditor()) return;
+  const n = await Cloud.unreadFeedback(); Admin.unread = n;
+  const b = document.getElementById('inbox-badge'); if (b) { b.hidden = !n; b.innerHTML = n ? `<span aria-hidden="true">${n > 99 ? '99+' : n}</span><span class="sr"> ${n} new message${n === 1 ? '' : 's'}</span>` : ''; }
+}
 async function startSession() {
   ready = false; lockUI(true);
   $app.innerHTML = '<div class="card"><p class="muted">Loading your questions...</p></div>';
@@ -621,8 +659,10 @@ async function startSession() {
   Store.hooks.reset = () => Cloud.queueReset();
   lockUI(false); ready = true;
   document.getElementById('nav-program').hidden = profile.role !== 'faculty';
+  clearInterval(badgeTimer);
   const navAdmin = document.getElementById('nav-admin');
-  navAdmin.hidden = !Admin.isEditor(); navAdmin.textContent = profile.role === 'admin' ? 'Admin' : 'Questions'; navAdmin.setAttribute('href', profile.role === 'admin' ? '#/admin' : '#/admin/questions');
+  navAdmin.hidden = !Admin.isEditor(); navAdmin.innerHTML = (profile.role === 'admin' ? 'Admin' : 'Questions') + '<span id="inbox-badge" class="navbadge" hidden></span>'; navAdmin.setAttribute('href', profile.role === 'admin' ? '#/admin' : '#/admin/questions');
+  refreshInboxBadge(); badgeTimer = setInterval(refreshInboxBadge, 120000);
   location.hash = '#/'; route();
   Cloud.sync().then(() => { applyTheme(); if (ready && !Store.data.active && /^#?\/?$/.test(location.hash)) route(); }).catch(() => {});
 }

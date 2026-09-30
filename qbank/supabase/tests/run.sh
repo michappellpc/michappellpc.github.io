@@ -364,4 +364,25 @@ eq  "rewriting the answer choices clears the picks"  "0" "$(root "update questio
 eq  "so nothing is shown for it any more"            "0" "$(as a "select count(*) from peer_choices() where question_id='q-opt';")"
 eq  "scores are untouched by clearing the picks"     "12" "$(root "select count(*) from attempts where question_id = 'q-opt';")"
 eq  "a pick cannot be longer than 3 characters"      "yes" "$(root "insert into attempts (user_id, question_id, ok, client_id, chosen) values ('00000000-0000-0000-0001-000000000001','q-opt',true,'zz','ABCDE');" 2>&1 | grep -q 'violates check' && echo yes)"
+echo; echo "Question feedback inbox"
+as a "insert into feedback (question_id, category, message, client_id, status, admin_note) values ('q-free','typo','There is a typo in option B','fb1','resolved','sneaky'); commit;" >/dev/null
+as b "insert into feedback (question_id, category, message, client_id) values ('q-free','wrong-answer','I think the key is wrong','fb2'); commit;" >/dev/null
+eq  "a member's message is saved as new, whatever they tried to set" "new/none" "$(root "select status||'/'||coalesce(admin_note,'none') from feedback where client_id='fb1'")"
+eq  "a member reads only their own messages"          "1" "$(as a "select count(*) from feedback;")"
+eq  "an unlisted person cannot send one"             "yes" "$(as c "insert into feedback (message, client_id) values ('hello there','x1');" 2>&1 | grep -q 'row-level security' && echo yes)"
+eq  "anonymous visitors cannot send one"             "yes" "$(as anon "insert into feedback (message, client_id) values ('hello there','x2');" 2>&1 | grep -q 'permission denied' && echo yes)"
+eq  "a message must have some text"                  "yes" "$(as a "insert into feedback (message, client_id) values ('hi','x3');" 2>&1 | grep -q 'violates check' && echo yes)"
+eq  "a repeated send does not duplicate it"          "1" "$(as a "insert into feedback (question_id, message, client_id) values ('q-free','There is a typo in option B','fb1') on conflict (user_id, client_id) do nothing; commit;" >/dev/null; root "select count(*) from feedback where client_id='fb1'")"
+eq  "a member cannot open the inbox"                 "yes" "$(as a "select * from feedback_inbox();" 2>&1 | grep -q 'editors only' && echo yes)"
+eq  "an admin sees both messages with who sent them" "2,a@x" "$(as admin "select count(*)||','||min(reporter) from feedback_inbox();")"
+eq  "a reviewer sees the messages but not who sent them" "2,none" "$(as rev "select count(*)||','||coalesce(min(reporter),'none') from feedback_inbox();")"
+eq  "the inbox shows the question's opening words"    "stem" "$(as admin "select distinct question_stem from feedback_inbox() where question_id='q-free';")"
+eq  "the unread count is 2 for editors"              "2" "$(as rev "select feedback_unread_count();")"
+eq  "and 0 for members"                              "0" "$(as a "select feedback_unread_count();")"
+eq  "an editor can mark a message resolved with a note" "resolved/fixed in v2" "$(FID=$(root "select id from feedback where client_id='fb1'"); as rev "select feedback_set($FID, 'resolved', 'fixed in v2'); commit;" >/dev/null; root "select status||'/'||admin_note from feedback where client_id='fb1'")"
+eq  "the unread count drops"                         "1" "$(as admin "select feedback_unread_count();")"
+eq  "a member cannot change a message's status"      "yes" "$(as a "select feedback_set(1, 'read');" 2>&1 | grep -q 'editors only' && echo yes)"
+eq  "a member cannot edit their message directly"    "yes" "$(as a "update feedback set message = 'changed later';" 2>&1 | grep -q 'permission denied' && echo yes)"
+root "insert into feedback (user_id, message, client_id) select '00000000-0000-0000-0000-0000000000b2', 'bulk message ' || g, 'bulk' || g from generate_series(1, 29) g;" >/dev/null
+eq  "a member is limited to 30 messages a day"       "yes" "$(as b "insert into feedback (message, client_id) values ('one too many','lim1');" 2>&1 | grep -q 'too many messages' && echo yes)"
 echo; echo "$PASS passed, $FAIL failed"; [[ $FAIL -eq 0 ]]

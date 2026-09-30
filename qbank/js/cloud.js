@@ -82,10 +82,10 @@ const Cloud = (() => {
   }
 
   // ---- queue of changes not yet on the server ----
-  const blankQueue = () => ({ attempts: [], marks: {}, tests: {}, settings: null, reset: false });
+  const blankQueue = () => ({ attempts: [], marks: {}, tests: {}, settings: null, reset: false, feedback: [] });
   const queue = () => Object.assign(blankQueue(), jget(qKey()) || {});
   const saveQueue = q => jset(qKey(), q);
-  const pending = () => { const q = queue(); return q.attempts.length + Object.keys(q.marks).length + Object.keys(q.tests).length + (q.settings ? 1 : 0) + (q.reset ? 1 : 0); };
+  const pending = () => { const q = queue(); return q.attempts.length + Object.keys(q.marks).length + Object.keys(q.tests).length + (q.settings ? 1 : 0) + (q.reset ? 1 : 0) + (q.feedback || []).length; };
   const cid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 
   function change(fn) { if (!cfg || !session) return; const q = queue(); fn(q); saveQueue(q); schedule(); }
@@ -114,6 +114,16 @@ const Cloud = (() => {
     if (tests.length) {
       await api('/rest/v1/tests?on_conflict=user_id,id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: tests.map(t => ({ id: t.id, taken_at: new Date(t.date).toISOString(), mode: t.mode, qids: t.qids, answers: t.answers, correct: t.correct, total: t.total, seconds: t.seconds })) });
       q = queue(); tests.forEach(t => delete q.tests[t.id]); saveQueue(q);
+    }
+    while ((q = queue()).feedback.length) {                                    // messages to the team (kept, not lost, if the database is not upgraded yet)
+      const batch = q.feedback.slice(0, 20);
+      try { await api('/rest/v1/feedback?on_conflict=user_id,client_id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: batch }); }
+      catch (e) {
+        if (e.status === 404 || /schema cache|relation .*feedback/i.test(e.message || '')) break;   // feedback table not there yet: try again after the upgrade
+        if (e.status === 400 || e.status === 403) { /* refused (too many today, or not allowed): do not retry forever */ }
+        else throw e;
+      }
+      q = queue(); q.feedback = q.feedback.slice(batch.length); saveQueue(q);
     }
     q = queue();
     if (q.settings) {
@@ -322,6 +332,11 @@ const Cloud = (() => {
     adminPrograms: () => api('/rest/v1/programs?select=*&order=name.asc'),
     saveProgram: p => api('/rest/v1/programs?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: [p] }),
     deleteProgram: id => api('/rest/v1/programs?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+    // ---- question feedback (members write, admins and reviewers read in Admin > Inbox) ----
+    queueFeedback(row) { change(q => { (q.feedback ||= []).push({ ...row, client_id: cid() }); }); },
+    inbox: () => api('/rest/v1/rpc/feedback_inbox', { method: 'POST', body: {} }),
+    async unreadFeedback() { try { const n = await api('/rest/v1/rpc/feedback_unread_count', { method: 'POST', body: {} }); return typeof n === 'number' ? n : 0; } catch { return 0; } },
+    setFeedback: (id, status, note) => api('/rest/v1/rpc/feedback_set', { method: 'POST', body: note === undefined ? { fid: id, new_status: status } : { fid: id, new_status: status, note } }),
     // ---- group averages (aggregate numbers only; the database withholds a question until enough members have answered it) ----
     async peerStats() {
       try {
