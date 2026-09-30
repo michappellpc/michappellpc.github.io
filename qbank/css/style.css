@@ -318,3 +318,11 @@ a.subjtile:hover{border-color:var(--accent);background:var(--sel)}.subjtile span
 /* ---- Group averages, flagged ---- */
 .peer{display:inline-block;margin:6px 0 2px;padding:3px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:.88rem}
 a.statlink{text-decoration:none;color:inherit;display:block}a.statlink:hover{border-color:var(--accent);background:var(--sel)}
+
+/* ---- Programs / faculty ---- */
+.heatmap td.heat{text-align:center;white-space:nowrap;min-width:84px}.heatmap td.heat span{font-size:.8rem;opacity:.85}
+.heatmap td.hi{background:#d7e9c3;color:#1f3d0f}.heatmap td.mid{background:#f6e6b5;color:#4a3608}.heatmap td.lo{background:#f4cbc0;color:#5a1b0e}.heatmap td.none{color:var(--muted)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .heatmap td.hi{background:#2b4a1a;color:#dff0cf}:root:not([data-theme=light]) .heatmap td.mid{background:#5a4610;color:#f6e6b5}:root:not([data-theme=light]) .heatmap td.lo{background:#5e2a1f;color:#f7d4ca}}
+:root[data-theme=dark] .heatmap td.hi{background:#2b4a1a;color:#dff0cf}:root[data-theme=dark] .heatmap td.mid{background:#5a4610;color:#f6e6b5}:root[data-theme=dark] .heatmap td.lo{background:#5e2a1f;color:#f7d4ca}
+.heatmap tr.avgrow th,.heatmap tr.avgrow td{border-bottom:2px solid var(--line);font-weight:700}
+.heatmap thead th{font-size:.78rem;vertical-align:bottom}

@@ -1,6 +1,6 @@
 'use strict';
 const $app = document.getElementById('app'), $timer = document.getElementById('timer');
-let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {}, lessons: [], lessonFiles: [], peer: {} };
+let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {}, lessons: [], lessonFiles: [], peer: {}, program: null };
 const APP_VERSION = '1.3';
 let tick = null, ready = false, profile = null, refocus = null;
 
@@ -122,7 +122,7 @@ async function route() {
   if (p === '' || p === 'results') refreshPeer();
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
-  ({ '': dashboard, create: () => create(arg), flagged: flaggedPage, lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
+  ({ '': dashboard, create: () => create(arg), flagged: flaggedPage, program: () => Program.facultyPage(), lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
@@ -151,6 +151,7 @@ function dashboard() {
   const headline = acc === null ? 'Start a test to build your performance profile.' : `${pct(c, c + w)}% correct across ${c + w} answers.` + (missed ? ` ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
   $app.innerHTML = `
   ${Mascot.scene(bank.config.coverImage)}
+  ${bank.program && bank.program.status === 'pending' ? `<div class="card notice">Waiting for faculty at <b>${esc(bank.program.name)}</b> to approve you. Until they do, they cannot see any of your progress. <a href="#/settings">Settings</a></div>` : ''}
   ${active ? `<div class="card row spread"><div><b>Test in progress</b> <span class="muted">(${Object.keys(active.answers).length}/${active.qids.length} answered)</span></div><a class="btn primary" href="#/test">Resume</a></div>` : ''}
   <div class="card rank">
     <div class="row" style="gap:14px;flex-wrap:nowrap"><span class="rankbadge" aria-hidden="true">${esc(rk.abbr)}</span>
@@ -411,6 +412,7 @@ function settings() {
       <p>Signed in as <b>${esc(Cloud.session.email)}</b>${profile ? ` <span class="tag">${esc(profile.role === 'admin' ? 'Admin' : profile.role === 'reviewer' ? 'Reviewer' : profile.plan === 'pro' ? 'Member' : 'Free')}</span>` : ''}</p>
       <p class="muted" id="syncline"></p>
       <div class="row"><button id="syncnow">Sync now</button><button id="signout">Sign out</button></div></div>
+    <div id="prog-card"></div>
     <div class="card"><h3>Change password</h3>
       <form id="pw" style="max-width:380px"><label for="pw-cur">Current password</label><input id="pw-cur" type="password" autocomplete="current-password" required>
       <label for="pw-new">New password (at least 8 characters)</label><input id="pw-new" type="password" autocomplete="new-password" minlength="8" required>
@@ -421,6 +423,7 @@ function settings() {
     : `<div class="card"><h3>Your data</h3><p class="muted">Progress is stored only in this browser. Export a backup to move devices or avoid losing it if you clear site data.</p>
       <div class="row"><button id="exp">Export progress</button><button id="imp">Import progress</button><input type="file" id="file" accept="application/json" hidden><button class="danger" id="reset">Reset all progress</button></div></div>`}`;
   if (document.getElementById('drafts')) document.getElementById('drafts').onchange = e => { Store.data.settings.showDrafts = e.target.checked; Store.touchSettings(); };
+  if (Cloud.enabled) Program.mountSettings(document.getElementById('prog-card'));
   document.getElementById('mascot').onchange = e => { Store.data.settings.mascot = e.target.checked; Store.save(); };
   document.getElementById('theme').onchange = e => { Store.data.settings.theme = e.target.value; Store.touchSettings(); applyTheme(); };
   if (!Cloud.enabled) {
@@ -491,11 +494,14 @@ function renderSignUp() {
     <form id="su"><label for="su-email">Email</label><input id="su-email" type="email" autocomplete="username" required>
     <label for="su-pw">Password (at least 8 characters)</label><input id="su-pw" type="password" autocomplete="new-password" minlength="8" required>
     <label for="su-pw2">Type the password again</label><input id="su-pw2" type="password" autocomplete="new-password" minlength="8" required>
+    <div id="su-prog" hidden><label for="su-pick">Residency program (optional)</label><select id="su-pick"><option value="">I am not in a program / not listed</option></select>
+      <p class="muted small">${esc(Program.NOTICE)} Faculty must approve you first.</p></div>
     <p class="notice" id="su-err" hidden role="alert"></p>
     <div class="row"><button class="primary" type="submit" id="su-go">Create account</button><button type="button" class="linkish" id="su-back">Back to sign in</button></div></form>
     <p class="muted">By creating an account you agree to the <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>. Free accounts include the free questions. Your program lead can upgrade you.</p></div>`;
   const err = document.getElementById('su-err'), go = document.getElementById('su-go');
   const fail = m => { err.textContent = m; err.hidden = false; go.disabled = false; };
+  Cloud.programs().then(list => { const box = document.getElementById('su-prog'); if (!list.length || !box) return; document.getElementById('su-pick').insertAdjacentHTML('beforeend', Program.options(list, '')); box.hidden = false; });
   document.getElementById('su-back').onclick = () => renderSignIn();
   document.getElementById('su').onsubmit = async e => {
     e.preventDefault(); err.hidden = true;
@@ -503,7 +509,7 @@ function renderSignUp() {
     if (a !== b) return fail('The two passwords do not match.');
     go.disabled = true;
     try {
-      const r = await Cloud.signUp(email, a);
+      const r = await Cloud.signUp(email, a, (document.getElementById('su-pick') || {}).value || '');
       if (r.signedIn) return await startSession();
       $app.innerHTML = '<div class="card signin"><h2>Check your email</h2><p>We sent a link to confirm your address. Open it, then come back and sign in.</p><div class="row"><button class="primary" id="su-ok">Go to sign in</button></div></div>';
       document.getElementById('su-ok').onclick = () => renderSignIn();
@@ -549,6 +555,7 @@ async function startSession() {
     setQuestions(await Cloud.questions());
     bank.lessons = await Cloud.lessons().catch(() => []);
     bank.peer = await Cloud.peerStats(); peerAt = Date.now();
+    bank.program = await Cloud.myProgram();
     Cloud.prefetchImages(bank.questions.filter(privImg).map(privImg));   // in the background, so pictures also work offline
   } catch (e) {
     if (e.auth) return renderSignIn('Please sign in again.');
@@ -562,6 +569,7 @@ async function startSession() {
   Store.hooks.settings = () => Cloud.queueSettings();
   Store.hooks.reset = () => Cloud.queueReset();
   lockUI(false); ready = true;
+  document.getElementById('nav-program').hidden = profile.role !== 'faculty';
   const navAdmin = document.getElementById('nav-admin');
   navAdmin.hidden = !Admin.isEditor(); navAdmin.textContent = profile.role === 'admin' ? 'Admin' : 'Questions'; navAdmin.setAttribute('href', profile.role === 'admin' ? '#/admin' : '#/admin/questions');
   location.hash = '#/'; route();
@@ -586,6 +594,7 @@ async function adminPage() {
   $app.innerHTML = '<div class="card"><p class="muted">Loading the group summary...</p></div>';
   try {
     const [mem, qs, allowed, signupOn, peerMin] = await Promise.all([Cloud.rpc('admin_member_summary'), Cloud.rpc('admin_question_stats'), Cloud.rest('allowed_emails?select=*&order=email.asc'), Cloud.signupOpen(), Cloud.peerMin().catch(() => 10)]);
+    const programs = await Cloud.adminPrograms().catch(() => []);
     const act = mem.filter(m => m.active), tot = act.reduce((x, m) => x + m.attempts, 0), cor = act.reduce((x, m) => x + m.correct, 0);
     const hard = qs.filter(q => q.attempts >= 3).sort((x, y) => x.pct_correct - y.pct_correct).slice(0, 15);
     const me = Cloud.session.email.toLowerCase();
@@ -594,7 +603,8 @@ async function adminPage() {
       <div class="card stat"><b>${tot ? pct(cor, tot) + '%' : '-'}</b><span>Group correct</span></div><div class="card stat"><b>${qs.length}</b><span>Questions in bank</span></div></div>
       <div class="card"><div class="row spread"><h2 style="margin:0">Members</h2><button id="csv">Download CSV</button></div>
         <div class="scroll" role="region" tabindex="0" aria-label="Data table"><table><caption class="sr">Members and their activity</caption><thead><tr><th scope="col">Email</th><th scope="col">Access</th><th scope="col">Answered</th><th scope="col">Correct</th><th scope="col">Last active</th></tr></thead><tbody>${mem.map(m =>
-        `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.role === 'reviewer' ? 'Reviewer' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
+        `<tr><td>${esc(m.email)}</td><td>${m.active ? esc(m.role === 'admin' ? 'Admin' : m.role === 'reviewer' ? 'Reviewer' : m.role === 'faculty' ? 'Faculty' : m.plan) : 'Not approved'}</td><td>${m.attempts}</td><td>${m.attempts ? pct(m.correct, m.attempts) + '%' : '-'}</td><td>${m.last_active ? new Date(m.last_active).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table></div></div>
+      <div id="prog-admin"></div>
       <div class="card"><h2>Group averages</h2>
         <form id="peerf" class="row" style="align-items:flex-end"><div><label for="pm">Show a group average once this many members have answered a question</label><input id="pm" type="number" min="5" max="1000" value="${peerMin}"></div><button class="primary" type="submit">Save</button></form>
         <p class="muted">Members then see "72% of members answered this correctly" after they answer, in their results and in the subject table. Each member's first try counts. Nothing is shown for fewer than 5 people, so no one can be singled out.</p>
@@ -607,7 +617,8 @@ async function adminPage() {
         `<tr><td>${esc(r.email)}</td><td>${esc(r.role)}</td><td>${esc(r.plan)}</td><td>${esc(r.note || '')}</td>
         <td>${r.email === me ? '<span class="muted">you</span>' : `<button data-edit="${esc(r.email)}" aria-label="Edit ${esc(r.email)}">Edit</button> <button data-reset="${esc(r.email)}" aria-label="Reset password for ${esc(r.email)}">Reset password</button> <button data-rm="${esc(r.email)}" aria-label="Remove ${esc(r.email)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>
         <form id="addem" class="row" style="margin-top:12px;align-items:flex-end"><div><label for="ae-email">Email</label><input id="ae-email" type="email" required autocomplete="off"></div>
-          <div><label for="ae-role">Role</label><select id="ae-role"><option>member</option><option>reviewer</option><option>admin</option></select></div>
+          <div><label for="ae-role">Role</label><select id="ae-role"><option>member</option><option>reviewer</option><option>faculty</option><option>admin</option></select></div>
+          ${programs.length ? `<div><label for="ae-prog">Program</label><select id="ae-prog"><option value="">None</option>${Program.options(programs, '')}</select></div>` : ''}
           <div><label for="ae-plan">Plan</label><select id="ae-plan"><option>pro</option><option>free</option></select></div>
           <div><label for="ae-note">Note</label><input id="ae-note" type="text" maxlength="80" autocomplete="off"></div><button class="primary" type="submit">Add member</button></form>
         <p class="notice" id="ae-msg" hidden role="alert"></p></div>
@@ -625,12 +636,13 @@ async function adminPage() {
       e.preventDefault(); say('');
       const email = document.getElementById('ae-email').value.trim().toLowerCase(), role = document.getElementById('ae-role').value;
       if (email === me && role !== 'admin') return say('You cannot take away your own admin access.');
-      const plan = document.getElementById('ae-plan').value, note = document.getElementById('ae-note').value.trim() || null;
+      const plan = document.getElementById('ae-plan').value, note = document.getElementById('ae-note').value.trim() || null, program_id = (document.getElementById('ae-prog') || {}).value || null;
+      if (role === 'faculty' && !program_id) return say('Faculty need a program. Add one under Residency programs first, then choose it here.');
       try {
-        try { const r = await Cloud.manageMember('create', { email, role, plan, note }); await showCredentials(r); adminPage(); return; }
+        try { const r = await Cloud.manageMember('create', { email, role, plan, note, program_id }); await showCredentials(r); adminPage(); return; }
         catch (x) {
           if (!x.notDeployed) throw x;
-          await upsert({ email, role, plan, note }); adminPage();          // account tools not deployed: fall back to approving only
+          await upsert(program_id ? { email, role, plan, note, program_id } : { email, role, plan, note }); adminPage();          // account tools not deployed: fall back to approving only
           toast(`Approved ${email}. Creating the account itself still needs Supabase (see the setup guide, step 4).`);
         }
       } catch (x) { say(x.offline ? 'No connection.' : 'Could not add: ' + x.message); }
@@ -644,6 +656,7 @@ async function adminPage() {
       const em = b.dataset.rm; if (!(await ask(`Remove ${em}? They will be locked out immediately. Their saved progress is kept.`, 'Remove'))) return;
       try { await Cloud.rest('allowed_emails?email=eq.' + encodeURIComponent(em), { method: 'DELETE' }); toast('Removed ' + em); adminPage(); } catch (x) { say('Could not remove: ' + x.message); }
     });
+    Program.mountAdmin(document.getElementById('prog-admin'), mem);
     document.getElementById('peerf').onsubmit = async e => {
       e.preventDefault(); const m = document.getElementById('pm-msg'); m.hidden = true;
       try { await Cloud.setPeerMin(parseInt(document.getElementById('pm').value, 10)); toast('Saved.'); }
@@ -653,7 +666,7 @@ async function adminPage() {
       try { await Cloud.setSignupOpen(e.target.checked); toast(e.target.checked ? 'Anyone can now create a free account.' : 'Sign-up is closed. Only people you add can get in.'); }
       catch (x) { e.target.checked = !e.target.checked; say('Could not change: ' + (x.offline ? 'no connection' : x.message)); }
     };
-    $app.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editMember(allowed.find(x => x.email === b.dataset.edit), say));
+    $app.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editMember(allowed.find(x => x.email === b.dataset.edit), say, programs));
   } catch (e) { $app.innerHTML = `<div class="card"><h2>Admin</h2><p class="muted">Could not load: ${esc(e.message)}</p></div>`; }
 }
 
@@ -678,10 +691,11 @@ function showCredentials(r) {
 }
 
 // Edit a person's role, plan and note, or delete the account completely.
-function editMember(r, say) {
+function editMember(r, say, programs = []) {
   const d = document.createElement('div'); d.className = 'modal';
   d.innerHTML = `<div class="card" role="dialog" aria-modal="true" aria-labelledby="ed-h" style="max-width:460px"><h3 id="ed-h" style="margin-top:0">Edit ${esc(r.email)}</h3>
-    <form id="ed"><label for="ed-role">Role</label><select id="ed-role">${['member', 'reviewer', 'admin'].map(v => `<option${v === r.role ? ' selected' : ''}>${v}</option>`).join('')}</select>
+    <form id="ed"><label for="ed-role">Role</label><select id="ed-role">${['member', 'reviewer', 'faculty', 'admin'].map(v => `<option${v === r.role ? ' selected' : ''}>${v}</option>`).join('')}</select>
+      ${programs.length ? `<label for="ed-prog">Program</label><select id="ed-prog"><option value="">None</option>${Program.options(programs, r.program_id || '')}</select>` : ''}
       <label for="ed-plan">Plan</label><select id="ed-plan">${['pro', 'free'].map(v => `<option${v === r.plan ? ' selected' : ''}>${v}</option>`).join('')}</select>
       <label for="ed-note">Note</label><input id="ed-note" type="text" maxlength="80" value="${esc(r.note || '')}" autocomplete="off">
       <p class="hint">Email addresses cannot be changed. To move someone to a new address, add the new one and remove the old one.</p>
@@ -694,6 +708,8 @@ function editMember(r, say) {
   d.querySelector('#ed').onsubmit = async e => {
     e.preventDefault();
     const row = { email: r.email, role: d.querySelector('#ed-role').value, plan: d.querySelector('#ed-plan').value, note: d.querySelector('#ed-note').value.trim() || null };
+    if (d.querySelector('#ed-prog')) row.program_id = d.querySelector('#ed-prog').value || null;
+    if (row.role === 'faculty' && !row.program_id) { close(); return say('Faculty need a program. Edit again and choose one.'); }
     try { await Cloud.rest('allowed_emails?on_conflict=email', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: [row] }); close(); toast('Saved.'); adminPage(); }
     catch (x) { close(); say(x.offline ? 'No connection.' : 'Could not save: ' + x.message); }
   };

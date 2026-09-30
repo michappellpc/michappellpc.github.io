@@ -9,10 +9,19 @@
 
 create extension if not exists pgcrypto;
 
+-- ------------------------------------------------------------ residency programs
+-- A program is a residency. Faculty (role 'faculty' on that program) can see the progress of the residents in it.
+create table if not exists public.programs (
+  id         text primary key check (id ~ '^[a-z0-9][a-z0-9-]*$'),
+  name       text not null unique check (length(name) between 2 and 120),
+  active     boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
 -- ---------------------------------------------------------------- people
 create table if not exists public.allowed_emails (
   email    text primary key check (email = lower(email)),
-  role     text not null default 'member' check (role in ('member', 'reviewer', 'admin')),
+  role     text not null default 'member' check (role in ('member', 'reviewer', 'faculty', 'admin')),
   plan     text not null default 'pro'    check (plan in ('free', 'pro')),
   note     text,
   added_at timestamptz not null default now()
@@ -22,7 +31,7 @@ create table if not exists public.profiles (
   id           uuid primary key references auth.users (id) on delete cascade,
   email        text not null,
   display_name text,
-  role         text not null default 'member' check (role in ('member', 'reviewer', 'admin')),
+  role         text not null default 'member' check (role in ('member', 'reviewer', 'faculty', 'admin')),
   plan         text not null default 'free'   check (plan in ('free', 'pro')),
   active       boolean not null default false,
   created_at   timestamptz not null default now(),
@@ -74,9 +83,12 @@ create table if not exists public.lessons (
 
 -- Databases created before the reviewer role / archive existed are upgraded here (safe to re-run).
 alter table public.allowed_emails drop constraint if exists allowed_emails_role_check;
-alter table public.allowed_emails add constraint allowed_emails_role_check check (role in ('member', 'reviewer', 'admin'));
+alter table public.allowed_emails add constraint allowed_emails_role_check check (role in ('member', 'reviewer', 'faculty', 'admin'));
 alter table public.profiles drop constraint if exists profiles_role_check;
-alter table public.profiles add constraint profiles_role_check check (role in ('member', 'reviewer', 'admin'));
+alter table public.profiles add constraint profiles_role_check check (role in ('member', 'reviewer', 'faculty', 'admin'));
+alter table public.allowed_emails add column if not exists program_id text references public.programs (id) on delete set null;
+alter table public.profiles add column if not exists program_id text references public.programs (id) on delete set null;
+alter table public.profiles add column if not exists program_status text check (program_status in ('pending', 'approved'));
 alter table public.questions add column if not exists archived boolean not null default false;
 alter table public.questions add column if not exists updated_by text;
 
@@ -169,15 +181,23 @@ $$
 declare
   a public.allowed_emails;
   invited boolean := coalesce(new.raw_app_meta_data ->> 'invited', '') = 'true';
+  want text := new.raw_user_meta_data ->> 'program_id';      -- a self sign-up may ASK for a program; faculty must approve it
+  pid text;
+  listed boolean;
 begin
   select * into a from public.allowed_emails where email = lower(new.email);
-  if found and invited then
-    insert into public.profiles (id, email, active, role, plan) values (new.id, lower(new.email), true, a.role, a.plan);
+  listed := found;                                             -- FOUND is reset by every SELECT, so keep this one
+  select id into pid from public.programs where id = want and active;
+  if listed and invited then
+    insert into public.profiles (id, email, active, role, plan, program_id, program_status)
+      values (new.id, lower(new.email), true, a.role, a.plan, a.program_id, case when a.program_id is null then null else 'approved' end);
   elsif public.signup_open() and not invited then
-    if not found then insert into public.allowed_emails (email, role, plan, note) values (lower(new.email), 'member', 'free', 'self sign-up'); end if;
-    insert into public.profiles (id, email, active, role, plan) values (new.id, lower(new.email), true, 'member', 'free');
+    if not listed then insert into public.allowed_emails (email, role, plan, note) values (lower(new.email), 'member', 'free', 'self sign-up'); end if;
+    insert into public.profiles (id, email, active, role, plan, program_id, program_status)
+      values (new.id, lower(new.email), true, 'member', 'free', pid, case when pid is null then null else 'pending' end);
   else
-    insert into public.profiles (id, email, active, role, plan) values (new.id, lower(new.email), found, coalesce(a.role, 'member'), coalesce(a.plan, 'free'));
+    insert into public.profiles (id, email, active, role, plan, program_id, program_status)
+      values (new.id, lower(new.email), a.email is not null, coalesce(a.role, 'member'), coalesce(a.plan, 'free'), a.program_id, case when a.program_id is null then null else 'approved' end);
   end if;
   return new;
 end $$;
@@ -194,7 +214,12 @@ begin
     update public.profiles set active = false, role = 'member', plan = 'free' where lower(email) = old.email;
     return old;
   end if;
-  update public.profiles set active = true, role = new.role, plan = new.plan where lower(email) = new.email;
+  -- Faculty mirror the program on the list. A resident the admin puts in a program is approved at once; a row with no program
+  -- leaves a resident's own request alone.
+  update public.profiles set active = true, role = new.role, plan = new.plan,
+    program_id = case when new.role = 'faculty' or new.program_id is not null then new.program_id else program_id end,
+    program_status = case when new.role = 'faculty' or new.program_id is not null then (case when new.program_id is null then null else 'approved' end) else program_status end
+  where lower(email) = new.email;
   return new;
 end $$;
 
@@ -207,6 +232,7 @@ alter table public.allowed_emails  enable row level security;
 alter table public.profiles        enable row level security;
 alter table public.questions       enable row level security;
 alter table public.lessons         enable row level security;
+alter table public.programs        enable row level security;
 alter table public.attempts        enable row level security;
 alter table public.question_marks  enable row level security;
 alter table public.tests           enable row level security;
@@ -217,6 +243,7 @@ drop policy if exists profiles_read      on public.profiles;
 drop policy if exists questions_read     on public.questions;
 drop policy if exists questions_admin    on public.questions;
 drop policy if exists questions_edit     on public.questions;
+drop policy if exists programs_admin     on public.programs;
 drop policy if exists lessons_read       on public.lessons;
 drop policy if exists lessons_edit       on public.lessons;
 drop policy if exists attempts_read      on public.attempts;
@@ -229,6 +256,7 @@ create policy allowed_admin   on public.allowed_emails for all    to authenticat
 create policy profiles_read   on public.profiles       for select to authenticated using (id = auth.uid() or public.is_admin());
 create policy questions_read  on public.questions      for select to authenticated using (public.has_plan(tier) and not archived and status = 'reviewed');   -- drafts are visible to admins and reviewers only
 create policy questions_edit  on public.questions      for all    to authenticated using (public.can_edit()) with check (public.can_edit());
+create policy programs_admin   on public.programs       for all    to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy lessons_read    on public.lessons        for select to authenticated using (public.has_plan(tier) and not archived and status = 'reviewed');
 create policy lessons_edit    on public.lessons        for all    to authenticated using (public.can_edit()) with check (public.can_edit());
 create policy attempts_read   on public.attempts       for select to authenticated using (user_id = auth.uid() and public.is_active());
@@ -246,6 +274,7 @@ grant select                         on public.profiles       to authenticated;
 grant select, insert, update, delete on public.allowed_emails to authenticated;
 grant select, insert, update, delete on public.questions      to authenticated;
 grant select, insert, update, delete on public.lessons        to authenticated;
+grant select, insert, update, delete on public.programs       to authenticated;
 grant select, insert                 on public.attempts       to authenticated;
 grant select, insert, update, delete on public.question_marks, public.tests, public.user_settings to authenticated;
 grant all on all tables    in schema public to service_role;
@@ -346,16 +375,17 @@ begin
 end $$;
 
 -- admin-only summaries (raise an error for everyone else)
-create or replace function public.admin_member_summary()
+drop function if exists public.admin_member_summary();
+create function public.admin_member_summary()
   returns table (user_id uuid, email text, display_name text, role text, plan text, active boolean,
-                 attempts bigint, correct bigint, last_active timestamptz)
+                 attempts bigint, correct bigint, last_active timestamptz, program_id text, program_status text)
   language plpgsql stable security definer set search_path = public as
 $$
 begin
   if not public.is_admin() then raise exception 'admins only'; end if;
   return query
     select p.id, p.email, p.display_name, p.role, p.plan, p.active,
-           count(a.id), count(a.id) filter (where a.ok), greatest(max(a.at), p.last_seen)
+           count(a.id), count(a.id) filter (where a.ok), greatest(max(a.at), p.last_seen), p.program_id, p.program_status
     from public.profiles p left join public.attempts a on a.user_id = p.id
     group by p.id order by p.email;
 end $$;
@@ -372,6 +402,87 @@ begin
            case when count(a.id) = 0 then null else round(100.0 * count(a.id) filter (where a.ok) / count(a.id), 1) end
     from public.questions q left join public.attempts a on a.question_id = q.id
     group by q.id order by q.id;
+end $$;
+
+-- ------------------------------------------------------------ programs: residents and faculty
+-- The list of programs is public on purpose (a resident picks theirs while creating an account).
+create or replace function public.program_list() returns table (id text, name text)
+  language sql stable security definer set search_path = public as
+$$ select p.id, p.name from public.programs p where p.active order by p.name $$;
+
+create or replace function public.my_program() returns table (id text, name text, status text)
+  language sql stable security definer set search_path = public as
+$$ select p.id, p.name, pr.program_status from public.profiles pr join public.programs p on p.id = pr.program_id where pr.id = auth.uid() $$;
+
+create or replace function public.request_program(pid text) returns void
+  language plpgsql security definer set search_path = public as
+$$
+begin
+  if not public.is_active() then raise exception 'not active'; end if;
+  if not exists (select 1 from public.programs where id = pid and active) then raise exception 'unknown program'; end if;
+  if exists (select 1 from public.profiles where id = auth.uid() and role in ('faculty', 'admin', 'reviewer')) then raise exception 'staff accounts are assigned by an administrator'; end if;
+  update public.profiles set program_id = pid, program_status = 'pending'
+    where id = auth.uid() and (program_id is distinct from pid);
+end $$;
+
+create or replace function public.leave_program() returns void
+  language sql security definer set search_path = public as
+$$ update public.profiles set program_id = null, program_status = null where id = auth.uid() and role not in ('faculty') $$;
+
+-- the program a signed-in faculty member looks after (null for everyone else)
+create or replace function public.faculty_program_id() returns text
+  language sql stable security definer set search_path = public as
+$$ select program_id from public.profiles where id = auth.uid() and active and role = 'faculty' $$;
+
+-- Faculty see progress only: counts, percent correct by subject, last active. Never which answer was chosen, notes, or test history.
+create or replace function public.faculty_roster()
+  returns table (user_id uuid, email text, status text, attempts bigint, correct bigint, last_active timestamptz, joined timestamptz)
+  language plpgsql stable security definer set search_path = public as
+$$
+declare fp text := public.faculty_program_id();
+begin
+  if fp is null then raise exception 'faculty only'; end if;
+  return query
+    select p.id, p.email, p.program_status,
+           case when p.program_status = 'approved' then count(a.id) end,
+           case when p.program_status = 'approved' then count(a.id) filter (where a.ok) end,
+           case when p.program_status = 'approved' then greatest(max(a.at), p.last_seen) end, p.created_at
+    from public.profiles p left join public.attempts a on a.user_id = p.id and p.program_status = 'approved'
+    where p.program_id = fp and p.role = 'member' and p.active
+    group by p.id order by p.email;
+end $$;
+
+create or replace function public.faculty_subject_stats()
+  returns table (user_id uuid, subject text, attempts bigint, correct bigint)
+  language plpgsql stable security definer set search_path = public as
+$$
+declare fp text := public.faculty_program_id();
+begin
+  if fp is null then raise exception 'faculty only'; end if;
+  return query
+    select a.user_id, q.subject, count(*), count(*) filter (where a.ok)
+    from public.attempts a join public.profiles p on p.id = a.user_id join public.questions q on q.id = a.question_id
+    where p.program_id = fp and p.program_status = 'approved' and p.role = 'member' and p.active
+    group by a.user_id, q.subject;
+end $$;
+
+create or replace function public.faculty_decide(uid uuid, approve boolean) returns void
+  language plpgsql security definer set search_path = public as
+$$
+declare fp text := public.faculty_program_id();
+begin
+  if fp is null then raise exception 'faculty only'; end if;
+  if approve then update public.profiles set program_status = 'approved' where id = uid and program_id = fp and program_status = 'pending';
+  else update public.profiles set program_id = null, program_status = null where id = uid and program_id = fp and program_status = 'pending'; end if;
+end $$;
+
+create or replace function public.faculty_remove(uid uuid) returns void
+  language plpgsql security definer set search_path = public as
+$$
+declare fp text := public.faculty_program_id();
+begin
+  if fp is null then raise exception 'faculty only'; end if;
+  update public.profiles set program_id = null, program_status = null where id = uid and program_id = fp and role = 'member';
 end $$;
 
 -- ------------------------------------------------------------ group averages (like the percentages UWorld shows)
@@ -415,6 +526,9 @@ grant execute on function public.is_active(), public.is_admin(), public.can_edit
 grant execute on function public.my_progress(), public.touch_seen(), public.reset_my_progress() to authenticated;
 grant execute on function public.admin_member_summary(), public.admin_question_stats() to authenticated;
 grant execute on function public.signup_open() to anon, authenticated;
+grant execute on function public.program_list() to anon, authenticated;
+grant execute on function public.my_program(), public.leave_program(), public.faculty_program_id(), public.faculty_roster(), public.faculty_subject_stats() to authenticated;
+grant execute on function public.request_program(text), public.faculty_decide(uuid, boolean), public.faculty_remove(uuid) to authenticated;
 grant execute on function public.peer_stats(), public.peer_min_users() to authenticated;
 grant execute on function public.set_peer_min_users(int) to authenticated;
 grant execute on function public.set_signup_open(boolean) to authenticated;

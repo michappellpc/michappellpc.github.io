@@ -275,4 +275,76 @@ eq  "the minimum cannot go below 5"                  "yes" "$(as admin "select s
 eq  "raising the minimum hides small groups"         "0" "$(as admin "select set_peer_min_users(20); commit;" >/dev/null; as a "select count(*) from peer_stats();")"
 as admin "select set_peer_min_users(10); commit;" >/dev/null
 eq  "anonymous visitors cannot call it"              "yes" "$(as anon "select * from peer_stats();" 2>&1 | grep -q 'permission denied' && echo yes)"
+echo; echo "Programs and faculty"
+root "insert into programs (id, name) values ('prog-one','Program One'), ('prog-two','Program Two');
+  insert into allowed_emails (email, role, plan, program_id) values ('fac@site.com','faculty','pro','prog-one'), ('fac2@site.com','faculty','pro','prog-two'), ('res1@site.com','member','pro','prog-one'), ('res2@site.com','member','pro','prog-two');
+  insert into auth.users (id, email) values ('00000000-0000-0000-0002-000000000001','fac@site.com'), ('00000000-0000-0000-0002-000000000002','fac2@site.com'), ('00000000-0000-0000-0002-000000000003','res1@site.com'), ('00000000-0000-0000-0002-000000000004','res2@site.com');
+  insert into attempts (user_id, question_id, ok, client_id) values ('00000000-0000-0000-0002-000000000003','q-free',true,'f1'), ('00000000-0000-0000-0002-000000000003','q-pro',false,'f2'), ('00000000-0000-0000-0002-000000000004','q-free',true,'f3');" >/dev/null
+as admin "select set_signup_open(true); commit;" >/dev/null
+root "insert into auth.users (id, email, raw_user_meta_data) values ('00000000-0000-0000-0002-000000000005','res3@site.com','{\"program_id\":\"prog-one\"}'), ('00000000-0000-0000-0002-000000000006','res4@site.com','{\"program_id\":\"nope\"}');" >/dev/null
+as admin "select set_signup_open(false); commit;" >/dev/null
+F1=00000000-0000-0000-0002-000000000001; R3=00000000-0000-0000-0002-000000000005
+eq  "anyone can read the list of programs"              "2" "$(as anon "select count(*) from program_list();")"
+eq  "a list shows names only"                           "Program One|Program Two" "$(as anon "select string_agg(name, '|' order by name) from program_list();")"
+eq  "faculty are active and tied to their program"      "faculty,prog-one" "$(root "select role||','||program_id from profiles where email='fac@site.com'")"
+eq  "an admin-assigned resident is approved"            "approved" "$(root "select program_status from profiles where email='res1@site.com'")"
+eq  "a self sign-up asking for a program is pending"    "pending" "$(root "select program_status from profiles where email='res3@site.com'")"
+eq  "asking for a program that does not exist is ignored" "none" "$(root "select coalesce(program_id,'none') from profiles where email='res4@site.com'")"
+eq  "faculty see their own residents, pending ones included" "res1@site.com|res3@site.com" "$(psql -X -q -t -A -d $DB <<SQL
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"$F1"}',true) \gset
+select string_agg(email, '|' order by email) from faculty_roster();
+SQL
+)"
+eq  "a pending resident's progress is hidden"           "null" "$(psql -X -q -t -A -d $DB <<SQL
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"$F1"}',true) \gset
+select coalesce(attempts::text, 'null') from faculty_roster() where email='res3@site.com';
+SQL
+)"
+eq  "an approved resident's numbers are shown"          "2,1" "$(psql -X -q -t -A -d $DB <<SQL
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"$F1"}',true) \gset
+select attempts||','||correct from faculty_roster() where email='res1@site.com';
+SQL
+)"
+eq  "the subject breakdown covers approved residents only" "1" "$(psql -X -q -t -A -d $DB <<SQL
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"$F1"}',true) \gset
+select count(distinct user_id) from faculty_subject_stats();
+SQL
+)"
+eq  "a member cannot open the faculty roster"           "yes" "$(as a "select * from faculty_roster();" 2>&1 | grep -q 'faculty only' && echo yes)"
+eq  "an admin who is not faculty cannot either"         "yes" "$(as admin "select * from faculty_roster();" 2>&1 | grep -q 'faculty only' && echo yes)"
+eq  "faculty cannot edit questions"                     "f" "$(psql -X -q -t -A -d $DB <<SQL
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"$F1"}',true) \gset
+select can_edit();
+SQL
+)"
+eq  "faculty cannot read the people table beyond themselves" "1" "$(psql -X -q -t -A -d $DB <<SQL
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"$F1"}',true) \gset
+select count(*) from profiles;
+SQL
+)"
+eq  "the other program's faculty cannot approve this resident" "pending" "$(psql -X -q -t -A -d $DB <<SQL >/dev/null
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0002-000000000002"}',true) \gset
+select faculty_decide('$R3', true);
+commit;
+SQL
+root "select program_status from profiles where email='res3@site.com'")"
+eq  "their own faculty can approve it"                  "approved" "$(psql -X -q -t -A -d $DB <<SQL >/dev/null
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"$F1"}',true) \gset
+select faculty_decide('$R3', true);
+commit;
+SQL
+root "select program_status from profiles where email='res3@site.com'")"
+eq  "faculty can remove a resident from the program"    "none" "$(psql -X -q -t -A -d $DB <<SQL >/dev/null
+begin; set local role authenticated; select set_config('request.jwt.claims','{"sub":"$F1"}',true) \gset
+select faculty_remove('$R3');
+commit;
+SQL
+root "select coalesce(program_id,'none') from profiles where email='res3@site.com'")"
+eq  "a member can request a program (pending)"          "pending" "$(as b "select request_program('prog-two'); commit;" >/dev/null; root "select program_status from profiles where email='b@x'")"
+eq  "and leave it again"                                "none" "$(as b "select leave_program(); commit;" >/dev/null; root "select coalesce(program_id,'none') from profiles where email='b@x'")"
+eq  "an unknown program is refused"                     "yes" "$(as a "select request_program('nope');" 2>&1 | grep -q 'unknown program' && echo yes)"
+eq  "staff cannot request a program themselves"         "yes" "$(as admin "select request_program('prog-one');" 2>&1 | grep -q 'assigned by an administrator' && echo yes)"
+eq  "only an admin can manage programs"                 "yes" "$(as a "insert into programs (id, name) values ('x1','Xray');" 2>&1 | grep -q 'row-level security' && echo yes)"
+eq  "an admin can add a program"                        "prog-three" "$(as admin "insert into programs (id, name) values ('prog-three','Program Three') returning id;")"
+eq  "the admin summary shows program and status"        "prog-one,approved" "$(as admin "select program_id||','||program_status from admin_member_summary() where email='res1@site.com';")"
 echo; echo "$PASS passed, $FAIL failed"; [[ $FAIL -eq 0 ]]
