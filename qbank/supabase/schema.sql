@@ -52,6 +52,26 @@ create table if not exists public.questions (
   updated_at  timestamptz not null default now()
 );
 
+-- ------------------------------------------------------------- lessons
+-- A lesson is a short teaching page for one subject: text, tables, charts, step flows and comparisons stored as "blocks".
+-- Draft lessons are visible to admins and reviewers only; reviewed ones are live for members whose plan covers the tier.
+create table if not exists public.lessons (
+  id          text primary key check (id ~ '^[a-z0-9][a-z0-9-]*$'),
+  status      text not null default 'draft' check (status in ('draft', 'reviewed')),
+  reviewed_by text,
+  boards      text[] not null check (cardinality(boards) > 0),
+  subject     text not null,
+  title       text not null,
+  summary     text not null default '',
+  position    int  not null default 100,
+  blocks      jsonb not null default '[]' check (jsonb_typeof(blocks) = 'array'),
+  refs        text[] not null default '{}',
+  tier        text not null default 'pro' check (tier in ('free', 'pro')),
+  archived    boolean not null default false,
+  updated_by  text,
+  updated_at  timestamptz not null default now()
+);
+
 -- Databases created before the reviewer role / archive existed are upgraded here (safe to re-run).
 alter table public.allowed_emails drop constraint if exists allowed_emails_role_check;
 alter table public.allowed_emails add constraint allowed_emails_role_check check (role in ('member', 'reviewer', 'admin'));
@@ -186,6 +206,7 @@ create trigger on_allowed_change after insert or update or delete on public.allo
 alter table public.allowed_emails  enable row level security;
 alter table public.profiles        enable row level security;
 alter table public.questions       enable row level security;
+alter table public.lessons         enable row level security;
 alter table public.attempts        enable row level security;
 alter table public.question_marks  enable row level security;
 alter table public.tests           enable row level security;
@@ -196,6 +217,8 @@ drop policy if exists profiles_read      on public.profiles;
 drop policy if exists questions_read     on public.questions;
 drop policy if exists questions_admin    on public.questions;
 drop policy if exists questions_edit     on public.questions;
+drop policy if exists lessons_read       on public.lessons;
+drop policy if exists lessons_edit       on public.lessons;
 drop policy if exists attempts_read      on public.attempts;
 drop policy if exists attempts_insert    on public.attempts;
 drop policy if exists marks_own          on public.question_marks;
@@ -206,6 +229,8 @@ create policy allowed_admin   on public.allowed_emails for all    to authenticat
 create policy profiles_read   on public.profiles       for select to authenticated using (id = auth.uid() or public.is_admin());
 create policy questions_read  on public.questions      for select to authenticated using (public.has_plan(tier) and not archived and status = 'reviewed');   -- drafts are visible to admins and reviewers only
 create policy questions_edit  on public.questions      for all    to authenticated using (public.can_edit()) with check (public.can_edit());
+create policy lessons_read    on public.lessons        for select to authenticated using (public.has_plan(tier) and not archived and status = 'reviewed');
+create policy lessons_edit    on public.lessons        for all    to authenticated using (public.can_edit()) with check (public.can_edit());
 create policy attempts_read   on public.attempts       for select to authenticated using (user_id = auth.uid() and public.is_active());
 create policy attempts_insert on public.attempts       for insert to authenticated
   with check (user_id = auth.uid() and public.is_active() and at <= now() + interval '5 minutes');
@@ -220,6 +245,7 @@ grant usage on schema public to anon, authenticated, service_role;
 grant select                         on public.profiles       to authenticated;
 grant select, insert, update, delete on public.allowed_emails to authenticated;
 grant select, insert, update, delete on public.questions      to authenticated;
+grant select, insert, update, delete on public.lessons        to authenticated;
 grant select, insert                 on public.attempts       to authenticated;
 grant select, insert, update, delete on public.question_marks, public.tests, public.user_settings to authenticated;
 grant all on all tables    in schema public to service_role;
@@ -232,7 +258,8 @@ insert into storage.buckets (id, name, public) values ('question-images', 'quest
 drop policy if exists question_images_read on storage.objects;
 create policy question_images_read on storage.objects for select to authenticated
   using (bucket_id = 'question-images'
-         and exists (select 1 from public.questions q where q.image = 'private:' || storage.objects.name));
+         and (exists (select 1 from public.questions q where q.image = 'private:' || storage.objects.name)
+              or exists (select 1 from public.lessons l where position('"private:' || storage.objects.name || '"' in l.blocks::text) > 0)));
 
 drop policy if exists question_images_edit on storage.objects;
 create policy question_images_edit on storage.objects for all to authenticated
@@ -267,6 +294,32 @@ end $$;
 drop trigger if exists questions_guard on public.questions;
 create trigger questions_guard before insert or update on public.questions
   for each row execute function public.questions_guard();
+
+create or replace function public.lessons_guard() returns trigger
+  language plpgsql security definer set search_path = public as
+$$
+declare who text;
+begin
+  new.updated_at := now();
+  if auth.uid() is null then
+    if new.updated_by is null then new.updated_by := 'upload tool'; end if;
+    return new;
+  end if;
+  select email into who from public.profiles where id = auth.uid();
+  new.updated_by := who;
+  if tg_op = 'UPDATE' and old.status = 'reviewed' and new.status = 'reviewed'
+     and (new.title, new.summary, new.blocks, new.refs, new.subject, new.boards)
+         is distinct from (old.title, old.summary, old.blocks, old.refs, old.subject, old.boards)
+  then new.status := 'draft'; end if;
+  if new.status <> 'reviewed' then new.reviewed_by := null;
+  elsif tg_op = 'INSERT' or old.status <> 'reviewed' then new.reviewed_by := who;
+  else new.reviewed_by := old.reviewed_by; end if;
+  return new;
+end $$;
+
+drop trigger if exists lessons_guard on public.lessons;
+create trigger lessons_guard before insert or update on public.lessons
+  for each row execute function public.lessons_guard();
 
 -- ---------------------------------------------------------------- functions the app calls
 create or replace function public.my_progress()

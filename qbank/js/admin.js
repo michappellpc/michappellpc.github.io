@@ -14,7 +14,7 @@ const Admin = (() => {
   const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
   function tabs(active) {
-    const items = role() === 'admin' ? [['overview', '#/admin', 'Overview'], ['questions', '#/admin/questions', 'Questions']] : [['questions', '#/admin/questions', 'Questions']];
+    const items = role() === 'admin' ? [['overview', '#/admin', 'Overview'], ['questions', '#/admin/questions', 'Questions'], ['lessons', '#/admin/lessons', 'Lessons']] : [['questions', '#/admin/questions', 'Questions'], ['lessons', '#/admin/lessons', 'Lessons']];
     return `<div class="tabs" role="navigation" aria-label="Admin sections">${items.map(([k, h, t]) => `<a href="${h}"${k === active ? ' aria-current="page" class="on"' : ''}>${t}</a>`).join('')}</div>`;
   }
 
@@ -151,6 +151,7 @@ const Admin = (() => {
   return { tabs, askText, ensure, refresh, list, view, subjectsFor, LETTERS, note, myEmail, isEditor, role, get cache() { return cache; },
     route(a, b, c) {
       if (!a) return role() === 'admin' ? adminPage() : (location.hash = '#/admin/questions');
+      if (a === 'lessons' && typeof AdminLessons !== 'undefined') return AdminLessons.route(b, c);
       if (a !== 'questions') return list();
       if (!b) return list();
       if (b === 'import' && Admin.importPage) return Admin.importPage();

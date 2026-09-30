@@ -1,6 +1,6 @@
 'use strict';
 const $app = document.getElementById('app'), $timer = document.getElementById('timer');
-let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {} };
+let bank = { boards: [], subjects: {}, questions: [], byId: {}, config: {}, lessons: [], lessonFiles: [] };
 const APP_VERSION = '1.3';
 let tick = null, ready = false, profile = null, refocus = null;
 
@@ -40,16 +40,17 @@ function applyTheme() {
 // Boards and subjects are not sensitive, so they always come from the static manifest. Questions come from the
 // private database in cloud mode, or from the static files (the pilot/demo mode) when accounts are not configured.
 async function loadMeta() {
-  if (window.__QBANK_DATA) { const m = window.__QBANK_DATA; bank.config = m.config || {}; bank.boards = m.boards; bank.subjects = m.subjects; return m.questions; }
+  if (window.__QBANK_DATA) { const m = window.__QBANK_DATA; bank.config = m.config || {}; bank.boards = m.boards; bank.subjects = m.subjects; bank.lessons = m.lessons || []; return m.questions; }
   const base = 'data/';
   const m = await (await fetch(base + 'manifest.json')).json();
   bank.config = await fetch(base + 'config.json').then(r => r.json()).catch(() => ({}));
-  bank.boards = m.boards; bank.subjects = m.subjects;
+  bank.boards = m.boards; bank.subjects = m.subjects; bank.lessonFiles = m.lessons || [];
   return m.files;
 }
 async function loadStatic(files) {
   const lists = Array.isArray(files) && typeof files[0] === 'object' ? [files] : await Promise.all(files.map(f => fetch('data/' + f).then(r => r.json())));
   setQuestions(lists.flat());
+  if (bank.lessonFiles.length) bank.lessons = (await Promise.all(bank.lessonFiles.map(f => fetch('data/' + f).then(r => r.json()).catch(() => [])))).flat();
 }
 function setQuestions(list) { bank.questions = list; bank.byId = Object.fromEntries(list.map(q => [q.id, q])); }
 
@@ -111,13 +112,13 @@ async function route() {
   const [p, arg, arg2, arg3] = location.hash.replace(/^#\/?/, '').split('/');
   if (Cloud.enabled && p !== 'admin' && Admin.changed) {      // questions were edited on the Admin pages; load the new set before practising
     Admin.changed = false;
-    try { setQuestions(await Cloud.questions()); } catch {}
+    try { setQuestions(await Cloud.questions()); bank.lessons = await Cloud.lessons(); } catch {}
     if (location.hash.replace(/^#\/?/, '').split('/')[0] !== p) return;   // the person moved on while it loaded
   }
-  document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href').split('/').slice(0, 2).join('/') === '#/' + (p === 'test' ? 'create' : p === 'results' || p === 'review' ? 'history' : p)));
+  document.querySelectorAll('nav a').forEach(l => l.classList.toggle('on', l.getAttribute('href').split('/').slice(0, 2).join('/') === '#/' + (p === 'test' ? 'create' : p === 'lesson' ? 'lessons' : p === 'results' || p === 'review' ? 'history' : p)));
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
-  ({ '': dashboard, create, history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
+  ({ '': dashboard, create: () => create(arg), lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
@@ -166,7 +167,7 @@ function dashboard() {
 }
 
 // ---------- create test ----------
-function create() {
+function create(preSubject) {
   pageTitle('New test');
   const boardBoxes = bank.boards.map(b => `<label class="chk"><input type="checkbox" name="board" value="${b.id}" checked> ${esc(b.name)}</label>`).join('');
   const subjects = [...new Set(Object.values(bank.subjects).flat())];
@@ -182,6 +183,10 @@ function create() {
     <p><label for="n">Number of questions</label> <input type="number" id="n" min="1" value="20"> <span class="muted" id="avail" aria-live="polite"></span></p>
     <button class="primary" id="go">Start test</button></form></div>`;
   const f = document.getElementById('f');
+  if (preSubject) {                                  // arrived from a lesson: practise just that subject
+    const want = decodeURIComponent(preSubject);
+    f.querySelectorAll('[name=subj]').forEach(e => { e.checked = e.value === want; });
+  }
   const vals = n => [...f.querySelectorAll(`[name=${n}]:checked`)].map(e => e.value);
   const pool = () => {
     const bs = vals('board'), ss = vals('subj'), stt = vals('status');
@@ -518,6 +523,7 @@ async function startSession() {
     profile = await Cloud.profile();
     if (!profile || !profile.active) return renderBlocked(Cloud.session.email);
     setQuestions(await Cloud.questions());
+    bank.lessons = await Cloud.lessons().catch(() => []);
     Cloud.prefetchImages(bank.questions.filter(privImg).map(privImg));   // in the background, so pictures also work offline
   } catch (e) {
     if (e.auth) return renderSignIn('Please sign in again.');
