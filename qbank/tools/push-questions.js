@@ -31,7 +31,9 @@ const rows = man.files.flatMap(f => JSON.parse(fs.readFileSync(path.join(dataDir
   explanation: q.explanation, option_notes: q.optionNotes || null, refs: q.references || [], tier: tierOverride || q.tier || 'pro', updated_at: new Date().toISOString()
 }));
 if (flag('--print')) { console.log(JSON.stringify(rows)); process.exit(0); }
-if (flag('--dry')) { console.log(`\nDry run: ${rows.length} question(s) would be uploaded. Nothing was sent.`); process.exit(0); }
+const images = [...new Set(rows.map(r => r.image).filter(i => i && i.startsWith('private:')).map(i => i.slice(8)))];
+const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
+if (flag('--dry')) { console.log(`\nDry run: ${rows.length} question(s) and ${images.length} private image(s) would be uploaded. Nothing was sent.`); process.exit(0); }
 
 const URL_ = (process.env.SUPABASE_URL || '').replace(/\/+$/, ''), KEY = process.env.SUPABASE_SERVICE_KEY || '';
 if (!URL_ || !KEY) die('\nSet SUPABASE_URL and SUPABASE_SERVICE_KEY first (see docs/CLOUD-SETUP.md, step 8).');
@@ -39,6 +41,11 @@ if (/^https?:\/\/[^/]*\.?supabase\.co$/.test(URL_) === false && !/^http:\/\/loca
 const H = { apikey: KEY, 'Content-Type': 'application/json' };
 if (KEY.split('.').length === 3) H.Authorization = 'Bearer ' + KEY;   // newer sb_secret_ keys go in apikey only
 (async () => {
+  for (const name of images) {      // pictures first, so no question ever points at a missing picture
+    const r = await fetch(`${URL_}/storage/v1/object/question-images/${encodeURIComponent(name)}`, { method: 'POST', headers: { ...H, 'Content-Type': MIME[name.split('.').pop().toLowerCase()], 'x-upsert': 'true' }, body: fs.readFileSync(path.join(dataDir, 'images', name)) });
+    if (!r.ok) die(`Image upload failed for ${name} (${r.status}): ${(await r.text()).slice(0, 300)}`);
+    console.log(`Uploaded image ${name}`);
+  }
   for (let i = 0; i < rows.length; i += 100) {
     const r = await fetch(`${URL_}/rest/v1/questions?on_conflict=id`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows.slice(i, i + 100)) });
     if (!r.ok) die(`Upload failed at question ${i + 1} (${r.status}): ${(await r.text()).slice(0, 300)}`);

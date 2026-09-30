@@ -178,6 +178,15 @@ grant select, insert, update, delete on public.question_marks, public.tests, pub
 grant all on all tables    in schema public to service_role;
 grant all on all sequences in schema public to service_role;
 
+-- ------------------------------------------------------- private images
+-- A question whose image is "private:name.png" has its picture in this private bucket. A member can read the picture
+-- only if they can read a question that uses it, so pictures follow the same plan and approval rules as the questions.
+insert into storage.buckets (id, name, public) values ('question-images', 'question-images', false) on conflict (id) do nothing;
+drop policy if exists question_images_read on storage.objects;
+create policy question_images_read on storage.objects for select to authenticated
+  using (bucket_id = 'question-images'
+         and exists (select 1 from public.questions q where q.image = 'private:' || storage.objects.name));
+
 -- ---------------------------------------------------------------- functions the app calls
 create or replace function public.my_progress()
   returns table (question_id text, seen int, correct int, wrong int, last_ok boolean)

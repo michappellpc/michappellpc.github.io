@@ -113,14 +113,18 @@ node tools/validate.js
 
 ## Images
 
-Put image files in `images/` (PNG or JPEG, ideally under 300 KB each so the app stays fast offline) and reference them in the question:
+**With accounts (recommended):** keep images in `qbank/private/images/` (PNG, JPEG, WebP or GIF, lower-case file names, under 2 MB each) and refer to them like this:
 
 ```json
-"image": "images/audiogram-01.png",
+"image": "private:audiogram-01.png",
 "imageAlt": "Audiogram: bilateral notch at 4 kHz, worse in the left ear"
 ```
 
-`imageAlt` is required (the validator enforces it). It is the text description for screen readers, and shows if the image fails to load. Tapping an image in the app enlarges it. Only use images you created or have the right to use.
+`push-questions.js` uploads them to the private image store first. Only members who may see the question can see its picture, and pictures are saved on the device for offline use.
+
+**Demo mode only:** put files in `images/` and use `"image": "images/name.png"`. Anything in that folder is public.
+
+`imageAlt` is required either way (the validator enforces it). It is the text description for screen readers and shows if the image cannot load. Tapping a picture enlarges it. Only use images you created or have the right to use.
 
 ## Validation
 

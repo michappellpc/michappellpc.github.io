@@ -106,9 +106,19 @@ Real questions must never be saved in the public repo. Keep them in the git-igno
    ```
    (On Windows PowerShell use `$env:SUPABASE_URL="..."` and `$env:SUPABASE_SERVICE_KEY="..."`.)
 
+**Pictures** (audiograms, spirometry, charts) are private too. Put the image files in `qbank/private/images/` (lower-case names ending in `.png`, `.jpg`, `.webp` or `.gif`, each under 2 MB) and refer to them in a question as `"image": "private:audiogram-01.png"` with an `imageAlt` description. The upload tool sends the pictures first. A member can only see a picture if they can see a question that uses it.
+
 Run it again any time to add or fix questions. Existing ones are updated by their `id`. `--tier free` makes a batch visible to free-plan accounts too (see "Free and paid" below).
 
-## 9. First-time check (please do this before inviting everyone)
+## 9. Contact address and legal pages
+
+The app has a privacy policy (`privacy.html`) and terms of use (`terms.html`), linked at the bottom of every page and on the sign-in screen. They describe what the app really collects, and they name the person who runs it as the contact.
+
+1. In `qbank/data/config.json` set `"contactEmail"` to the address residents should write to (for example for locked-out accounts or deleting their data). Until you do, the pages say "the person who invited you".
+2. Read both pages once. I wrote them from how the app actually works, but I am not a lawyer, so have someone qualified review them before you rely on them, especially if you ever charge.
+3. Your site's main page (`michappellpc.github.io`) is the separate Pocket Flight Surgeon privacy policy and is not touched by any of this.
+
+## 10. First-time check (please do this before inviting everyone)
 
 I built and tested all of this against a stand-in for Supabase and on a real test database, but I could not reach the real Supabase from where I work. So the first real run is yours:
 
@@ -119,6 +129,9 @@ I built and tested all of this against a stand-in for Supabase and on a real tes
 - [ ] Turn on airplane mode, reload, and answer one. Turn it back on. The row should appear in `attempts` shortly after.
 - [ ] Open **Admin** in the menu. You should see the member list and question stats.
 - [ ] Sign in as a resident (or a test account) and confirm there is **no** Admin menu.
+- [ ] In **Admin**, approve a test email, change its plan, and remove it again.
+- [ ] In **Settings**, change your password, then sign out and back in with the new one.
+- [ ] If you have uploaded a question with a picture, confirm the picture shows, then confirm it still shows in airplane mode.
 - [ ] Try **Forgot password** and confirm the email arrives (only works if email is set up, step 4).
 - [ ] Sign out, then check the device: reloading should show the sign-in screen.
 
@@ -128,7 +141,11 @@ If something fails, tell me exactly what you saw (a screenshot helps) and I will
 
 ## Everyday tasks
 
-**Add or remove a person:** Table Editor > `allowed_emails`. Deleting the row blocks them at once. To remove the account entirely, also delete them under Authentication > Users.
+**Approve, change or remove a person:** use **Admin > Approved emails** in the app (or Table Editor > `allowed_emails`). Removing an email blocks them at once. Creating the account itself is still done under Authentication > Users (step 4), because creating logins needs Supabase's own tools. To delete an account entirely, also delete it there.
+
+**A resident forgot their password:** they use **Forgot password** on the sign-in screen (needs email set up), or you set a new one for them under Authentication > Users. Everyone can change their own password in **Settings**.
+
+**See how the group is doing:** **Admin** shows members, how many questions each has answered, and the hardest questions. **Download CSV** exports the member list.
 
 **Make a question or person "free" vs "pro":** every question has a `tier` and every person a `plan`. A `pro` plan sees everything, a `free` plan only sees `free` questions. Right now everyone you add is `pro`, so tiers do nothing until you decide to charge.
 
@@ -140,7 +157,7 @@ If something fails, tell me exactly what you saw (a screenshot helps) and I will
 
 - Protected: the question text, answers and explanations are only sent to approved, signed-in people, and each person only ever sees their own progress.
 - Not protected: an approved person can still copy what they can see (screenshots, copying text). That cannot be prevented by any website.
-- **Images** are still served from the public `images/` folder, so use them only for non-sensitive pictures for now. Private images are a planned addition.
+- **Pictures** use the private image store (see step 8), not the public `images/` folder. Anything you put in the public `images/` folder is visible to anyone, so do not use it for real question images.
 - The public repo still contains the app itself and 4 placeholder demo questions. That is fine. With accounts turned on the demo questions are not used.
 
 ## If you plan to charge later
@@ -153,6 +170,7 @@ The pieces for it are already in place: a `plan` for each person and a `tier` fo
 |---|---|
 | "Email or password is incorrect" | Wrong password, or the account wasn't created (step 4) or wasn't confirmed ("Auto Confirm User") |
 | "Account not active yet" | Their email isn't in `allowed_emails`, or was typed with capital letters. Emails must be lower case |
+| A picture says "Image unavailable" | The picture was not uploaded (run the upload tool again), the name in the question does not match the file, or the device is offline and had not saved it yet |
 | Signed in but 0 questions | No questions uploaded yet (step 8), or the person is on the `free` plan and the questions are `pro` |
 | "Could not load your questions" while online | The schema wasn't run (step 2) or the URL/key in `config.json` is wrong |
 | Reset or invite email never arrives | Supabase's built-in email is rate-limited. Set up SMTP (step 4) |

@@ -17,6 +17,10 @@ insert into auth.users (id, email) values ('${U[admin]}','Admin@X'), ('${U[a]}',
 insert into questions (id, boards, subject, stem, options, answer, explanation, tier) values
   ('q-free','{aem}','S','stem','[{"id":"A","text":"x"}]','A','why','free'), ('q-pro','{om}','S','stem','[{"id":"A","text":"x"}]','A','why','pro');
 delete from allowed_emails where email = 'e@x';   -- e was approved, then removed
+insert into questions (id, boards, subject, stem, options, answer, explanation, tier, image, image_alt) values
+  ('q-img-pro','{om}','S','stem','[{"id":"A","text":"x"}]','A','why','pro','private:pro.png','alt'), ('q-img-free','{om}','S','stem','[{"id":"A","text":"x"}]','A','why','free','private:free.png','alt');
+insert into storage.buckets (id, name) values ('other-bucket','other-bucket') on conflict do nothing;
+insert into storage.objects (bucket_id, name) values ('question-images','pro.png'), ('question-images','free.png'), ('question-images','orphan.png'), ('other-bucket','pro.png');
 SQL
 
 PASS=0; FAIL=0
@@ -46,8 +50,8 @@ echo "Questions"
 has "signed-out visitor is refused"              "permission denied" "$(as anon "select count(*) from questions;")"
 eq  "unlisted person sees nothing"               "0" "$(as c "select count(*) from questions;")"
 eq  "removed person sees nothing"                "0" "$(as e "select count(*) from questions;")"
-eq  "pro member sees free + pro"                 "2" "$(as a "select count(*) from questions;")"
-eq  "free member sees only free tier"            "1" "$(as d "select count(*) from questions;")"
+eq  "pro member sees free + pro"                 "4" "$(as a "select count(*) from questions;")"
+eq  "free member sees only free tier"            "2" "$(as d "select count(*) from questions;")"
 eq  "free member cannot fetch a pro question"    "0" "$(as d "select count(*) from questions where id='q-pro';")"
 has "member cannot add a question"               "row-level security" "$(as a "insert into questions (id,boards,subject,stem,options,answer,explanation) values ('x','{aem}','S','s','[]','A','e');")"
 has "member cannot edit a question"              "" "$(as a "update questions set stem='hacked' where id='q-free'; select stem from questions where id='q-free';")"
@@ -74,6 +78,18 @@ has "attempts cannot be edited"                  "permission denied" "$(as a "up
 has "attempts cannot be deleted"                 "permission denied" "$(as a "delete from attempts;")"
 eq  "progress summary is correct"                "q-free|2|1|1|false" "$(as a "select question_id||'|'||seen||'|'||correct||'|'||wrong||'|'||last_ok from my_progress() where question_id='q-free';")"
 
+echo "Private images follow the question rules"
+eq  "pro member can read both pictures"          "2" "$(as a "select count(*) from storage.objects where bucket_id='question-images' and name in ('pro.png','free.png');")"
+eq  "free member can read only the free picture" "free.png" "$(as d "select string_agg(name, ',') from storage.objects where bucket_id='question-images';")"
+eq  "a picture no question uses is unreadable"   "0" "$(as a "select count(*) from storage.objects where name='orphan.png';")"
+eq  "same name in another bucket is unreadable"  "0" "$(as a "select count(*) from storage.objects where bucket_id='other-bucket';")"
+eq  "unlisted person reads no pictures"          "0" "$(as c "select count(*) from storage.objects;")"
+eq  "removed person reads no pictures"           "0" "$(as e "select count(*) from storage.objects;")"
+has "signed-out visitor is refused"              "permission denied" "$(as anon "select count(*) from storage.objects;")"
+has "member cannot upload a picture"             "permission denied" "$(as a "insert into storage.objects (bucket_id, name) values ('question-images','evil.png');")"
+has "member cannot delete a picture"             "permission denied" "$(as a "delete from storage.objects;")"
+eq  "the bucket is private"                      "f" "$(root "select public from storage.buckets where id='question-images'")"
+
 echo "Marks, tests and settings are private"
 as a "insert into question_marks (question_id, flagged, note) values ('q-free', true, 'mine'); insert into user_settings (data) values ('{\"theme\":\"dark\"}'); insert into tests (id, taken_at, mode, qids, correct, total, seconds) values ('t1', now(), 'tutor', '{q-free}', 1, 1, 30); commit;" >/dev/null
 eq  "owner reads their mark"                     "mine" "$(as a "select note from question_marks;")"
@@ -98,7 +114,7 @@ eq  "admin sees every profile"                   "6" "$(as admin "select count(*
 eq  "admin summary lists everyone with counts"   "a@x|3|2" "$(as admin "select email||'|'||attempts||'|'||correct from admin_member_summary() where email='a@x';")"
 eq  "question stats show percent correct"        "q-free|3|2|66.7" "$(as admin "select question_id||'|'||attempts||'|'||correct||'|'||pct_correct from admin_question_stats() where question_id='q-free';")"
 eq  "admin can approve a new email"              "true,pro" "$(as admin "insert into allowed_emails (email, plan) values ('c@x','pro'); commit;" >/dev/null; root "select active||','||plan from profiles where email='c@x'")"
-eq  "newly approved person now sees questions"   "2"     "$(as c "select count(*) from questions;")"
+eq  "newly approved person now sees questions"   "4"     "$(as c "select count(*) from questions;")"
 eq  "admin can revoke access"                    "false,free" "$(as admin "delete from allowed_emails where email='c@x'; commit;" >/dev/null; root "select active||','||plan from profiles where email='c@x'")"
 eq  "revoked person sees nothing again"          "0"     "$(as c "select count(*) from questions;")"
 

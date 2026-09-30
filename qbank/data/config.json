@@ -3,5 +3,6 @@
   "supabase": {
     "url": "",
     "anonKey": ""
-  }
+  },
+  "contactEmail": ""
 }

@@ -10,3 +10,12 @@ do $$ begin
 end $$;
 grant usage on schema auth to anon, authenticated, service_role;
 grant execute on function auth.uid() to anon, authenticated, service_role;
+
+-- stand-in for Supabase Storage
+create schema if not exists storage;
+create table if not exists storage.buckets (id text primary key, name text not null, public boolean not null default false);
+create table if not exists storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets (id), name text, unique (bucket_id, name));
+alter table storage.objects enable row level security;
+grant usage on schema storage to anon, authenticated, service_role;
+grant select on storage.objects, storage.buckets to authenticated;
+grant all on storage.objects, storage.buckets to service_role;
