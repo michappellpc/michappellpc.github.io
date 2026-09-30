@@ -40,7 +40,7 @@ function ask(msg, yes = 'OK', no = 'Cancel') {
 
 // ---------- router ----------
 function route() {
-  clearInterval(tick); $timer.hidden = true;
+  clearInterval(tick); $timer.hidden = true; Mascot.stop();
   const [p, arg] = location.hash.replace(/^#\/?/, '').split('/');
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
@@ -63,7 +63,12 @@ function dashboard() {
       <td style="width:22%"><div class="bar"><i style="width:${pct(cc, cc + ww)}%"></i></div></td></tr>`);
   }
   const active = Store.data.active;
+  const acc = c + w ? pct(c, c + w) : null, missed = all.filter(s => s.last === 'w').length;
+  const hello = acc === null ? 'Welcome aboard, Doc! Ready for your first flight?'
+    : (acc >= 80 ? 'Cruising altitude. Keep it up!' : acc >= 60 ? 'Solid progress. Let\'s patch the weak spots.' : 'A little rough air, but every question counts.')
+    + (missed ? ` You have ${missed} missed question${missed > 1 ? 's' : ''} to revisit.` : '');
   $app.innerHTML = `
+  ${Mascot.scene()}
   ${active ? `<div class="card row spread"><div><b>Test in progress</b> <span class="muted">(${Object.keys(active.answers).length}/${active.qids.length} answered)</span></div><a class="btn primary" href="#/test">Resume</a></div>` : ''}
   <div class="grid">
     <div class="card stat"><b>${bank.questions.length}</b><span class="muted">Questions in bank</span></div>
@@ -75,6 +80,7 @@ function dashboard() {
     ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
   <a class="btn primary" href="#/create">Create a new test</a>`;
+  Mascot.mount(document.getElementById('scene-slot'), { pose: acc !== null && acc >= 80 ? 'cheer' : 'idle', msg: esc(hello), scale: 6 });
 }
 
 // ---------- create test ----------
@@ -154,7 +160,17 @@ function renderTest() {
     </div>
     <details style="margin-top:12px"><summary>Notes</summary><textarea id="note" rows="3" placeholder="Your notes on this question">${esc(st ? st.note : '')}</textarea></details>
   </div>
-  <div class="card"><div class="nav">${nav}</div></div>`;
+  <div class="card"><div class="nav">${nav}</div></div>
+  <div style="height:110px"></div><div id="coach" class="coach"></div>`;
+  let streak = 0;
+  if (shown && sel === q.answer) for (let i = t.idx; i >= 0 && t.revealed[t.qids[i]] && t.answers[t.qids[i]] === bank.byId[t.qids[i]].answer; i--) streak++;
+  const L = Mascot.lines;
+  const coach = shown
+    ? (sel === q.answer
+      ? { pose: streak >= 3 ? 'cheer' : 'happy', msg: streak >= 3 ? `${streak} in a row! You\'re on fire.` : Mascot.pick(L.correct, id) }
+      : { pose: 'sad', msg: Mascot.pick(L.wrong, id) })
+    : { pose: 'idle', msg: tutor || t.idx === 0 ? Mascot.pick(L.tips, id + t.idx) : '' };
+  Mascot.mount(document.getElementById('coach'), { ...coach, msg: coach.msg && esc(coach.msg).replace(/&#39;/g, "'"), scale: 4 });
   bindTest(t, q);
 }
 
@@ -218,12 +234,14 @@ function results(id) {
   const r = Store.data.tests.find(x => x.id === id); if (!r) return (location.hash = '#/history');
   const by = {};
   r.qids.forEach(qid => { const q = bank.byId[qid]; if (!q) return; const o = by[q.subject] ||= { c: 0, n: 0 }; o.n++; if (r.answers[qid] === q.answer) o.c++; });
-  $app.innerHTML = `<div class="card"><h2>Results</h2>
+  const p = pct(r.correct, r.total);
+  $app.innerHTML = `<div class="card"><div id="res-mascot"></div><h2>Results</h2>
     <div class="grid"><div class="stat"><b>${pct(r.correct, r.total)}%</b><span class="muted">${r.correct}/${r.total} correct</span></div>
     <div class="stat"><b>${fmt(r.seconds)}</b><span class="muted">Time</span></div>
     <div class="stat"><b>${r.mode}</b><span class="muted">Mode</span></div></div></div>
     <div class="card"><h3>By subject</h3><table><tbody>${Object.entries(by).map(([s, o]) => `<tr><td>${esc(s)}</td><td>${o.c}/${o.n}</td><td>${pct(o.c, o.n)}%</td></tr>`).join('')}</tbody></table></div>
     <a class="btn primary" href="#/review/${r.id}">Review questions</a> <a class="btn" href="#/create">New test</a>`;
+  Mascot.mount(document.getElementById('res-mascot'), p >= 80 ? { pose: 'cheer', msg: 'Outstanding flight! That is board-ready work.' } : p >= 60 ? { pose: 'happy', msg: 'Solid flight. Review the misses and go again.' } : { pose: 'sad', msg: 'Rough landing. Review makes it stick, and I\'m here for the next one.' });
 }
 
 function review(id) {

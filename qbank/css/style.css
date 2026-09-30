@@ -1,10 +1,10 @@
-:root{--bg:#f5f7fa;--card:#fff;--fg:#1c2733;--muted:#64748b;--line:#dbe2ea;--accent:#1d5fa8;--good:#1f8a4c;--bad:#c0392b;--warn:#b7791f;--sel:#e8f1fb}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1720;--card:#18222e;--fg:#e6edf3;--muted:#93a1b1;--line:#2a3746;--accent:#5aa2e6;--good:#3fb573;--bad:#ef6a5b;--warn:#e0a94a;--sel:#1e3350;color-scheme:dark}}
-:root[data-theme=dark]{--bg:#0f1720;--card:#18222e;--fg:#e6edf3;--muted:#93a1b1;--line:#2a3746;--accent:#5aa2e6;--good:#3fb573;--bad:#ef6a5b;--warn:#e0a94a;--sel:#1e3350;color-scheme:dark}
+:root{--bg:#f5f7fa;--card:#fff;--fg:#1c2733;--muted:#64748b;--line:#dbe2ea;--accent:#1d5fa8;--good:#1f8a4c;--bad:#c0392b;--warn:#b7791f;--sel:#e8f1fb;--sky:#bfe3ff;--cloud:#fff;--ground:#6cbf6a;--stars:0;--px:'Press Start 2P',ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1720;--card:#18222e;--fg:#e6edf3;--muted:#93a1b1;--line:#2a3746;--accent:#5aa2e6;--good:#3fb573;--bad:#ef6a5b;--warn:#e0a94a;--sel:#1e3350;--sky:#0e1d38;--cloud:#2a3d5e;--ground:#2c6b48;--stars:1;color-scheme:dark}}
+:root[data-theme=dark]{--bg:#0f1720;--card:#18222e;--fg:#e6edf3;--muted:#93a1b1;--line:#2a3746;--accent:#5aa2e6;--good:#3fb573;--bad:#ef6a5b;--warn:#e0a94a;--sel:#1e3350;--sky:#0e1d38;--cloud:#2a3d5e;--ground:#2c6b48;--stars:1;color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 .top{display:flex;align-items:center;gap:16px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:env(safe-area-inset-top,0px);z-index:5;flex-wrap:wrap}
-.brand{font-weight:700;color:var(--fg);text-decoration:none}
+.brand{font-family:var(--px);font-size:.8rem;font-weight:400;color:var(--fg);text-decoration:none}
 nav{display:flex;gap:14px;flex:1;flex-wrap:wrap}nav a{color:var(--muted);text-decoration:none}nav a:hover{color:var(--accent)}
 .timer{font-variant-numeric:tabular-nums;font-weight:600}
 main{max-width:1000px;margin:0 auto;padding:16px}
@@ -39,3 +39,24 @@ input[type=number]{width:90px}
 @media(max-width:600px){main{padding:10px}}
 
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}.modal .card{max-width:420px;margin:0}
+
+.stat b{font-family:var(--px);font-size:1.3rem;font-weight:400}
+.scene{position:relative;height:190px;overflow:hidden;border-radius:10px;border:1px solid var(--line);background:var(--sky);margin-bottom:16px}
+.scene .px{display:block}
+.scene .cloud{position:absolute;color:var(--cloud);animation:drift linear infinite;transform:translateX(-120%)}
+.scene .star{position:absolute;opacity:var(--stars)}
+.scene .jet{position:absolute;top:26px;left:0;animation:fly 16s linear infinite;transform:translateX(-120%)}
+.scene .ground{position:absolute;left:0;right:0;bottom:0;height:22px;background:var(--ground);border-top:4px solid color-mix(in srgb,var(--ground) 70%,#000)}
+.scene-slot{position:absolute;left:14px;bottom:12px;right:14px}
+.mascot{display:flex;align-items:flex-end;gap:12px}
+.sprite{flex:none}
+.bubble{position:relative;background:var(--card);color:var(--fg);border:2px solid var(--fg);padding:8px 12px;max-width:min(360px,60vw);font-size:.9rem;line-height:1.35;margin-bottom:24px;box-shadow:3px 3px 0 var(--fg)}
+.bubble::before{content:"";position:absolute;left:-9px;bottom:10px;width:12px;height:12px;background:var(--card);border-left:2px solid var(--fg);border-bottom:2px solid var(--fg);transform:rotate(45deg)}
+.coach{position:fixed;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:4;pointer-events:none;flex-direction:row-reverse}
+.coach .mascot{flex-direction:row-reverse}.coach .bubble{margin-bottom:12px;max-width:min(260px,52vw);font-size:.85rem}
+.coach .bubble::before{left:auto;right:-9px;transform:rotate(-135deg)}
+#res-mascot .mascot{margin-bottom:8px}#res-mascot .bubble{margin-bottom:30px}
+@keyframes drift{from{transform:translateX(-120%)}to{transform:translateX(calc(100vw + 20%))}}
+@keyframes fly{from{transform:translateX(-120%)}to{transform:translateX(calc(100vw))}}
+@media(prefers-reduced-motion:reduce){.scene .cloud,.scene .jet{animation:none;transform:none}.scene .cloud{left:auto!important;right:10%}.scene .jet{left:60%}}
+@media(max-width:600px){.scene{height:170px}.scene-slot .sprite{width:96px;height:auto}}
