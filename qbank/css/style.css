@@ -114,3 +114,10 @@ nav a.on{color:var(--hdrfg);font-weight:700}
   .scene-label{top:8px;bottom:auto;right:12px}.scene-label span{display:none}
   .foot{padding-bottom:70px}
 }
+
+.fb{width:min(520px,100%);margin:0;max-height:92vh;overflow:auto}
+.fb label{display:block;margin:12px 0 4px;font-weight:600}
+.fb textarea,.fb select,.fb input[type=text]{width:100%}
+.fb input[type=text]{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:30;max-width:min(92vw,420px);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.9rem;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+@media(min-width:601px){.toast{bottom:24px}}

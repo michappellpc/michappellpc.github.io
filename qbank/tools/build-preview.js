@@ -2,7 +2,7 @@
 // Builds one self-contained HTML body (CSS, JS and questions inlined): node qbank/tools/build-preview.js <out.html>
 const fs = require('fs'), path = require('path'), r = p => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 const man = JSON.parse(r('data/manifest.json'));
-const data = { boards: man.boards, subjects: man.subjects, questions: man.files.flatMap(f => JSON.parse(r('data/' + f))) };
+const data = { config: JSON.parse(r('data/config.json')), boards: man.boards, subjects: man.subjects, questions: man.files.flatMap(f => JSON.parse(r('data/' + f))) };
 const css = r('css/style.css').replace(/url\(\.\.\/fonts\/([^)]+)\)/g, (m, f) => `url(data:font/woff2;base64,${fs.readFileSync(path.join(__dirname, '..', 'fonts', f)).toString('base64')})`);
 const safe = s => s.replace(/<\/script/gi, '<\\/script');
 const html = r('index.html');

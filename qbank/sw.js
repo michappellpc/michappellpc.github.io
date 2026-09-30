@@ -1,9 +1,9 @@
 // Offline support. App files and questions: network first (always fresh when online), cached copy when offline.
 // Fonts and icons: cache first. Bump VERSION to force old caches to be dropped.
-const VERSION = 'qbank-v1';
+const VERSION = 'qbank-v2';
 const CORE = ['./', 'index.html', 'css/style.css', 'js/store.js', 'js/mascot.js', 'js/app.js', 'manifest.webmanifest',
   'fonts/stardos-stencil-latin-400-normal.woff2', 'fonts/stardos-stencil-latin-700-normal.woff2',
-  'icons/icon-192.png', 'icons/icon-512.png', 'data/manifest.json'];
+  'icons/icon-192.png', 'icons/icon-512.png', 'data/manifest.json', 'data/config.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
