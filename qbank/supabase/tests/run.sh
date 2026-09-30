@@ -385,4 +385,27 @@ eq  "a member cannot change a message's status"      "yes" "$(as a "select feedb
 eq  "a member cannot edit their message directly"    "yes" "$(as a "update feedback set message = 'changed later';" 2>&1 | grep -q 'permission denied' && echo yes)"
 root "insert into feedback (user_id, message, client_id) select '00000000-0000-0000-0000-0000000000b2', 'bulk message ' || g, 'bulk' || g from generate_series(1, 29) g;" >/dev/null
 eq  "a member is limited to 30 messages a day"       "yes" "$(as b "insert into feedback (message, client_id) values ('one too many','lim1');" 2>&1 | grep -q 'too many messages' && echo yes)"
+echo; echo "Conversations and support"
+as a "insert into feedback (kind, subject, message, client_id, question_id, category) values ('support','Upgrading my plan','How do I get access to the pro questions?','sup1','q-free','typo'); commit;" >/dev/null
+SID=$(root "select id from feedback where client_id='sup1'")
+eq  "a support message has no question and a plain category" "support||other" "$(root "select kind||'|'||coalesce(question_id,'')||'|'||category from feedback where client_id='sup1'")"
+eq  "the team sees it with its subject"                "support,Upgrading my plan" "$(as admin "select kind||','||subject from feedback_inbox() where id = $SID;")"
+eq  "it counts as new for the team"                    "new" "$(root "select status from feedback where id = $SID")"
+eq  "a member cannot reply as the team"                "yes" "$(as a "select thread_team_reply($SID, 'I am the team');" 2>&1 | grep -q 'editors only' && echo yes)"
+eq  "a reviewer can reply"                             "read/true" "$(as rev "select thread_team_reply($SID, 'You can upgrade from the Support page or ask us here.'); commit;" >/dev/null; root "select status||'/'||member_unread from feedback where id = $SID")"
+eq  "the member sees an unread reply"                  "1" "$(as a "select my_unread_replies();")"
+eq  "in their own conversations list"                  "Upgrading my plan,true,1" "$(as a "select subject||','||member_unread||','||replies from my_threads() where id = $SID;")"
+eq  "the conversation reads member then team"          "member,team" "$(as a "select string_agg(sender, ',' order by created_at) from my_thread_messages($SID);")"
+eq  "another member cannot read it"                    "0" "$(as b "select count(*) from my_thread_messages($SID);")"
+eq  "another member cannot reply into it"              "yes" "$(as b "select thread_member_reply($SID, 'hi');" 2>&1 | grep -q 'no such conversation' && echo yes)"
+eq  "opening it clears the unread mark"                "0" "$(as a "select my_thread_seen($SID); commit;" >/dev/null; as a "select my_unread_replies();")"
+eq  "the member can answer back, which reopens it for the team" "new/2" "$(as a "select thread_member_reply($SID, 'Thank you, that worked.'); commit;" >/dev/null; root "select f.status||'/'||(select count(*) from feedback_messages m where m.feedback_id=f.id) from feedback f where f.id = $SID")"
+eq  "admins see which teammate replied"                "rev@x" "$(as admin "select author from thread_messages($SID) where sender='team';")"
+eq  "reviewers do not see who replied"                 "none" "$(as rev "select coalesce(author,'none') from thread_messages($SID) where sender='team';")"
+eq  "the team's inbox counts the replies"              "2" "$(as admin "select replies from feedback_inbox() where id = $SID;")"
+eq  "an empty reply is refused"                        "yes" "$(as rev "select thread_team_reply($SID, '   ');" 2>&1 | grep -q '1 to 1500' && echo yes)"
+eq  "a member cannot read the reply table directly"    "yes" "$(as a "select * from feedback_messages;" 2>&1 | grep -q 'permission denied' && echo yes)"
+eq  "anonymous visitors cannot call the conversation functions" "yes" "$(as anon "select * from my_threads();" 2>&1 | grep -q 'permission denied' && echo yes)"
+root "insert into feedback_messages (feedback_id, sender, author_id, message) select $SID, 'member', '00000000-0000-0000-0000-0000000000a1', 'filler ' || g from generate_series(1, 30) g;" >/dev/null
+eq  "a member is limited to 30 replies a day"          "yes" "$(as a "select thread_member_reply($SID, 'one too many');" 2>&1 | grep -q 'too many messages' && echo yes)"
 echo; echo "$PASS passed, $FAIL failed"; [[ $FAIL -eq 0 ]]

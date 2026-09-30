@@ -337,6 +337,14 @@ const Cloud = (() => {
     inbox: () => api('/rest/v1/rpc/feedback_inbox', { method: 'POST', body: {} }),
     async unreadFeedback() { try { const n = await api('/rest/v1/rpc/feedback_unread_count', { method: 'POST', body: {} }); return typeof n === 'number' ? n : 0; } catch { return 0; } },
     setFeedback: (id, status, note) => api('/rest/v1/rpc/feedback_set', { method: 'POST', body: note === undefined ? { fid: id, new_status: status } : { fid: id, new_status: status, note } }),
+    // ---- conversations: replies both ways, and support messages (a conversation with no question) ----
+    myThreads: () => api('/rest/v1/rpc/my_threads', { method: 'POST', body: {} }),
+    myThreadMessages: id => api('/rest/v1/rpc/my_thread_messages', { method: 'POST', body: { fid: id } }),
+    markThreadSeen: id => api('/rest/v1/rpc/my_thread_seen', { method: 'POST', body: { fid: id } }),
+    async myUnreadReplies() { try { const n = await api('/rest/v1/rpc/my_unread_replies', { method: 'POST', body: {} }); return typeof n === 'number' ? n : 0; } catch { return 0; } },
+    replyThread: (id, msg) => api('/rest/v1/rpc/thread_member_reply', { method: 'POST', body: { fid: id, msg } }),
+    threadMessages: id => api('/rest/v1/rpc/thread_messages', { method: 'POST', body: { fid: id } }),
+    teamReply: (id, msg) => api('/rest/v1/rpc/thread_team_reply', { method: 'POST', body: { fid: id, msg } }),
     // ---- group averages (aggregate numbers only; the database withholds a question until enough members have answered it) ----
     async peerStats() {
       try {

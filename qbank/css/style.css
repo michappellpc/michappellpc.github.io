@@ -345,3 +345,12 @@ label.chk .cnt{color:var(--muted);font-variant-numeric:tabular-nums}label.chk.ze
 .navbadge{display:inline-block;min-width:1.35em;padding:0 .4em;margin-left:6px;border-radius:99px;background:#c0392b;color:#fff;font-size:.72rem;font-weight:700;line-height:1.5;text-align:center;vertical-align:middle}
 .tabs .navbadge.inline{margin-left:4px}
 .msg .msgtext{white-space:pre-wrap;margin:8px 0 12px;line-height:1.6}
+
+/* ---- Conversations ---- */
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#c0392b;margin-right:8px;vertical-align:middle}
+.convo{display:flex;flex-direction:column;gap:10px;margin:12px 0 16px}
+.bubblerow{display:flex}.bubblerow.them{justify-content:flex-start}.bubblerow.me{justify-content:flex-end}
+.cbubble{max-width:min(560px,92%);padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+.bubblerow.me .cbubble{background:var(--sel);border-color:var(--accent)}
+.cbubble .who{font-size:.78rem;color:var(--muted)}.cbubble p{margin:4px 0 0;white-space:pre-wrap;line-height:1.55}
+details.thread{margin:8px 0 12px}details.thread summary{cursor:pointer;color:var(--accent);font-weight:600}
