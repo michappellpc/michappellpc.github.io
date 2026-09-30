@@ -14,8 +14,8 @@ const Admin = (() => {
   const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
   function tabs(active) {
-    const items = role() === 'admin' ? [['overview', '#/admin', 'Overview'], ['questions', '#/admin/questions', 'Questions'], ['lessons', '#/admin/lessons', 'Lessons']] : [['questions', '#/admin/questions', 'Questions'], ['lessons', '#/admin/lessons', 'Lessons']];
-    return `<div class="tabs" role="navigation" aria-label="Admin sections">${items.map(([k, h, t]) => `<a href="${h}"${k === active ? ' aria-current="page" class="on"' : ''}>${t}</a>`).join('')}</div>`;
+    const items = role() === 'admin' ? [['overview', '#/admin', 'Overview'], ['questions', '#/admin/questions', 'Questions'], ['lessons', '#/admin/lessons', 'Lessons'], ['inbox', '#/admin/inbox', 'Inbox']] : [['questions', '#/admin/questions', 'Questions'], ['lessons', '#/admin/lessons', 'Lessons'], ['inbox', '#/admin/inbox', 'Inbox']];
+    return `<div class="tabs" role="navigation" aria-label="Admin sections">${items.map(([k, h, t]) => `<a href="${h}"${k === active ? ' aria-current="page" class="on"' : ''}>${t}${k === 'inbox' && Admin.unread ? ` <span class="navbadge inline">${Admin.unread}</span>` : ''}</a>`).join('')}</div>`;
   }
 
   function askText(msg, expected, yes) {          // a confirmation that needs a word typed, for irreversible actions
@@ -152,6 +152,7 @@ const Admin = (() => {
     route(a, b, c) {
       if (!a) return role() === 'admin' ? adminPage() : (location.hash = '#/admin/questions');
       if (a === 'lessons' && typeof AdminLessons !== 'undefined') return AdminLessons.route(b, c);
+      if (a === 'inbox' && typeof Inbox !== 'undefined') return Inbox.page();
       if (a !== 'questions') return list();
       if (!b) return list();
       if (b === 'import' && Admin.importPage) return Admin.importPage();

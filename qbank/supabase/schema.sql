@@ -92,6 +92,24 @@ alter table public.profiles add column if not exists program_status text check (
 alter table public.questions add column if not exists archived boolean not null default false;
 alter table public.questions add column if not exists updated_by text;
 
+-- ------------------------------------------------------------ question feedback (the in-app inbox)
+-- Members send a short message about a question. Admins and reviewers read it in Admin > Inbox. Only admins see who sent it.
+create table if not exists public.feedback (
+  id          bigint generated always as identity primary key,
+  user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  question_id text,                                     -- plain text so the message outlives a deleted question
+  category    text not null default 'other' check (category in ('wrong-answer', 'unclear', 'typo', 'picture', 'other')),
+  message     text not null check (char_length(message) between 3 and 1500),
+  context     text check (char_length(context) <= 300),
+  client_id   text not null,                            -- makes retries harmless
+  status      text not null default 'new' check (status in ('new', 'read', 'resolved')),
+  admin_note  text check (char_length(admin_note) <= 1000),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (user_id, client_id)
+);
+alter table public.feedback enable row level security;
+
 -- ------------------------------------------------------- per-person data
 create table if not exists public.attempts (          -- one row per answered question; never edited
   id          bigint generated always as identity primary key,
@@ -246,6 +264,8 @@ drop policy if exists questions_read     on public.questions;
 drop policy if exists questions_admin    on public.questions;
 drop policy if exists questions_edit     on public.questions;
 drop policy if exists programs_admin     on public.programs;
+drop policy if exists feedback_insert     on public.feedback;
+drop policy if exists feedback_own        on public.feedback;
 drop policy if exists lessons_read       on public.lessons;
 drop policy if exists lessons_edit       on public.lessons;
 drop policy if exists attempts_read      on public.attempts;
@@ -259,6 +279,8 @@ create policy profiles_read   on public.profiles       for select to authenticat
 create policy questions_read  on public.questions      for select to authenticated using (public.has_plan(tier) and not archived and status = 'reviewed');   -- drafts are visible to admins and reviewers only
 create policy questions_edit  on public.questions      for all    to authenticated using (public.can_edit()) with check (public.can_edit());
 create policy programs_admin   on public.programs       for all    to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy feedback_insert  on public.feedback       for insert to authenticated with check (user_id = auth.uid() and public.is_active());
+create policy feedback_own     on public.feedback       for select to authenticated using (user_id = auth.uid());
 create policy lessons_read    on public.lessons        for select to authenticated using (public.has_plan(tier) and not archived and status = 'reviewed');
 create policy lessons_edit    on public.lessons        for all    to authenticated using (public.can_edit()) with check (public.can_edit());
 create policy attempts_read   on public.attempts       for select to authenticated using (user_id = auth.uid() and public.is_active());
@@ -277,6 +299,7 @@ grant select, insert, update, delete on public.allowed_emails to authenticated;
 grant select, insert, update, delete on public.questions      to authenticated;
 grant select, insert, update, delete on public.lessons        to authenticated;
 grant select, insert, update, delete on public.programs       to authenticated;
+grant select, insert                 on public.feedback       to authenticated;
 grant select, insert                 on public.attempts       to authenticated;
 grant select, insert, update, delete on public.question_marks, public.tests, public.user_settings to authenticated;
 grant all on all tables    in schema public to service_role;
@@ -487,6 +510,51 @@ begin
   update public.profiles set program_id = null, program_status = null where id = uid and program_id = fp and role = 'member';
 end $$;
 
+-- ------------------------------------------------------------ feedback functions
+create or replace function public.feedback_guard() returns trigger
+  language plpgsql security definer set search_path = public as
+$$
+begin
+  if auth.uid() is null then return new; end if;
+  new.status := 'new'; new.admin_note := null; new.updated_at := now();      -- a member cannot mark their own message
+  if (select count(*) from public.feedback where user_id = auth.uid() and created_at > now() - interval '24 hours') >= 30 then
+    raise exception 'too many messages today';
+  end if;
+  return new;
+end $$;
+drop trigger if exists feedback_guard on public.feedback;
+create trigger feedback_guard before insert on public.feedback for each row execute function public.feedback_guard();
+
+create or replace function public.feedback_inbox()
+  returns table (id bigint, question_id text, question_stem text, category text, message text, context text, status text, admin_note text, created_at timestamptz, reporter text)
+  language plpgsql stable security definer set search_path = public as
+$$
+begin
+  if not public.can_edit() then raise exception 'editors only'; end if;
+  return query
+    select f.id, f.question_id, left(q.stem, 140), f.category, f.message, f.context, f.status, f.admin_note, f.created_at,
+           case when public.is_admin() then p.email end
+    from public.feedback f left join public.questions q on q.id = f.question_id left join public.profiles p on p.id = f.user_id
+    order by f.created_at desc limit 500;
+end $$;
+
+create or replace function public.feedback_unread_count() returns int
+  language plpgsql stable security definer set search_path = public as
+$$
+begin
+  if not public.can_edit() then return 0; end if;
+  return (select count(*)::int from public.feedback where status = 'new');
+end $$;
+
+create or replace function public.feedback_set(fid bigint, new_status text, note text default null) returns void
+  language plpgsql security definer set search_path = public as
+$$
+begin
+  if not public.can_edit() then raise exception 'editors only'; end if;
+  if new_status not in ('new', 'read', 'resolved') then raise exception 'unknown status'; end if;
+  update public.feedback set status = new_status, admin_note = coalesce(note, admin_note), updated_at = now() where id = fid;
+end $$;
+
 -- ------------------------------------------------------------ group averages (like the percentages UWorld shows)
 -- Only aggregate numbers leave the database, and only for a question that at least N different active members have answered.
 -- N is chosen by an admin and can never go below 5, so a number can never point at one person. Each member's FIRST try counts.
@@ -561,6 +629,8 @@ grant execute on function public.is_active(), public.is_admin(), public.can_edit
 grant execute on function public.my_progress(), public.touch_seen(), public.reset_my_progress() to authenticated;
 grant execute on function public.admin_member_summary(), public.admin_question_stats() to authenticated;
 grant execute on function public.signup_open() to anon, authenticated;
+grant execute on function public.feedback_inbox(), public.feedback_unread_count() to authenticated;
+grant execute on function public.feedback_set(bigint, text, text) to authenticated;
 grant execute on function public.program_list() to anon, authenticated;
 grant execute on function public.my_program(), public.leave_program(), public.faculty_program_id(), public.faculty_roster(), public.faculty_subject_stats() to authenticated;
 grant execute on function public.request_program(text), public.faculty_decide(uuid, boolean), public.faculty_remove(uuid) to authenticated;
