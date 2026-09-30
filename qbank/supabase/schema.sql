@@ -121,13 +121,44 @@ $$ select exists (select 1 from public.profiles p where p.id = auth.uid() and p.
                   and (t = 'free' or p.plan = 'pro' or p.role in ('admin', 'reviewer'))) $$;
 
 -- ------------------------------------------- keep profiles in step with the allow list
-create or replace function public.handle_new_user() returns trigger
+-- Sign-up switch. When on, anyone can create their own account on the sign-in page and gets a FREE member account at once
+-- (the admin can raise or remove it later). When off, only people an admin created (or approved by hand) can get in.
+create table if not exists public.app_settings (key text primary key, value jsonb not null);
+alter table public.app_settings enable row level security;          -- no policies: only the functions below can touch it
+insert into public.app_settings (key, value) values ('open_signup', 'true') on conflict (key) do nothing;
+
+create or replace function public.signup_open() returns boolean
+  language sql stable security definer set search_path = public as
+$$ select coalesce((select (value)::text = 'true' from public.app_settings where key = 'open_signup'), false) $$;
+
+create or replace function public.set_signup_open(open boolean) returns void
   language plpgsql security definer set search_path = public as
 $$
 begin
-  insert into public.profiles (id, email, active, role, plan)
-  select new.id, lower(new.email), a.email is not null, coalesce(a.role, 'member'), coalesce(a.plan, 'free')
-  from (select 1) s left join public.allowed_emails a on a.email = lower(new.email);
+  if not public.is_admin() then raise exception 'admins only'; end if;
+  insert into public.app_settings (key, value) values ('open_signup', to_jsonb(open))
+    on conflict (key) do update set value = excluded.value;
+end $$;
+
+-- A new login becomes a profile. Accounts made by an admin (through the member-admin function, which marks them "invited"
+-- in app_metadata, something a visitor cannot set) get exactly what the approved list says. A person who signs up on their
+-- own gets a free member account and never a role or plan from the list, so nobody can claim someone else's pre-approval.
+create or replace function public.handle_new_user() returns trigger
+  language plpgsql security definer set search_path = public as
+$$
+declare
+  a public.allowed_emails;
+  invited boolean := coalesce(new.raw_app_meta_data ->> 'invited', '') = 'true';
+begin
+  select * into a from public.allowed_emails where email = lower(new.email);
+  if found and invited then
+    insert into public.profiles (id, email, active, role, plan) values (new.id, lower(new.email), true, a.role, a.plan);
+  elsif public.signup_open() and not invited then
+    if not found then insert into public.allowed_emails (email, role, plan, note) values (lower(new.email), 'member', 'free', 'self sign-up'); end if;
+    insert into public.profiles (id, email, active, role, plan) values (new.id, lower(new.email), true, 'member', 'free');
+  else
+    insert into public.profiles (id, email, active, role, plan) values (new.id, lower(new.email), found, coalesce(a.role, 'member'), coalesce(a.plan, 'free'));
+  end if;
   return new;
 end $$;
 
@@ -294,3 +325,5 @@ revoke execute on all functions in schema public from public, anon;
 grant execute on function public.is_active(), public.is_admin(), public.can_edit(), public.has_plan(text) to authenticated;
 grant execute on function public.my_progress(), public.touch_seen(), public.reset_my_progress() to authenticated;
 grant execute on function public.admin_member_summary(), public.admin_question_stats() to authenticated;
+grant execute on function public.signup_open() to anon, authenticated;
+grant execute on function public.set_signup_open(boolean) to authenticated;

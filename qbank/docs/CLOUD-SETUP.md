@@ -63,13 +63,16 @@ If you skip this, **Add member** still approves the email, but you must create t
 
 (**Invite user** emails a link instead. Supabase's built-in email is limited to a few messages an hour, and may only reach your own team, so set up your own email service under **Authentication > Emails > SMTP settings** first if you use it.)
 
-## 5. Lock down sign-up
+## 5. Sign-up settings
 
-1. **Authentication** > **Sign In / Providers** (or **Providers**) > **Email**.
-2. Turn **off** "Allow new users to sign up" (in some versions "Enable sign ups").
+The app has its own switch: **Admin > Sign-up > "Let anyone create a free account on the sign-in page"**. While it is on, anyone can make an account on the sign-in page and gets a **free** member account straight away (they appear in Approved emails as "self sign-up", where you can upgrade, edit or delete them). Free accounts only see questions set to **Free members too**; questions set to **Pro members** stay private. Turn the switch off to make the site invitation-only again.
+
+In Supabase, for the switch to work:
+1. **Authentication** > **Sign In / Providers** > **Email**: keep "Allow new users to sign up" **on**.
+2. Decide on **Confirm email**. Turned **off**, new accounts work at once (simplest, and fine because open sign-up does not depend on owning an address). Turned **on**, people must click an emailed link first, which needs your own email service (Authentication > Emails > SMTP settings), because Supabase's built-in email only reaches your own team.
 3. Set the minimum password length to 8 or more.
 
-The approved-list rules already keep strangers out even if this is left on. This is a second lock.
+Two safety rules are built into the database: someone who signs up on their own can never receive a role or plan from the approved list (so nobody can claim another person's pre-approval), and only accounts made by an admin through **Add member** get exactly what the list says.
 
 ## 6. Tell Supabase your website address
 
@@ -158,7 +161,7 @@ If something fails, tell me exactly what you saw (a screenshot helps) and I will
 
 ## Everyday tasks
 
-**Add, change or remove a person:** use **Admin > Approved emails** in the app. **Add member** creates the account (step 4A). Removing an email blocks them at once. To delete an account entirely, also delete it under Authentication > Users.
+**Add, change or remove a person:** use **Admin > Approved emails** in the app. **Add member** creates the account (step 4A), **Edit** changes role, plan and note, **Reset password** makes a temporary password, **Remove** locks them out but keeps their history, and **Delete account** (inside Edit) erases the account and all of their data for good.
 
 **A resident forgot their password:** they use **Forgot password** on the sign-in screen (needs email set up), or you set a new one for them under Authentication > Users. Everyone can change their own password in **Settings**.
 

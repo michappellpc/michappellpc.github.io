@@ -200,6 +200,22 @@ const Cloud = (() => {
         throw new Error('Could not sign in. Please try again.');
       }
     },
+    // Open sign-up: anyone may make their own free account while the admin has this switched on.
+    async signupOpen() { try { return (await raw('/rest/v1/rpc/signup_open', { method: 'POST', body: {} })) === true; } catch { return false; } },
+    async setSignupOpen(open) { await api('/rest/v1/rpc/set_signup_open', { method: 'POST', body: { open } }); },
+    async signUp(email, password) {
+      let r;
+      try { r = await raw('/auth/v1/signup', { method: 'POST', body: { email, password } }); }
+      catch (e) {
+        if (e.offline) throw new Error('No connection. You need internet to create an account.');
+        if (e.status === 429) throw new Error('Too many attempts. Wait a minute and try again.');
+        if (/registered|exists/i.test(e.message || '')) throw new Error('That email already has an account. Sign in instead, or use Forgot password.');
+        if (e.status === 422 || e.status === 400) throw new Error(e.message || 'Could not create the account.');
+        throw new Error('Could not create the account. Please try again.');
+      }
+      if (r && r.access_token) { setSession(r); return { signedIn: true }; }
+      return { signedIn: false };              // the project asks people to confirm their email first
+    },
     async recover(email) {
       try { await raw('/auth/v1/recover', { method: 'POST', body: { email } }); }
       catch (e) { if (e.offline) throw new Error('No connection.'); if (e.status === 429) throw new Error('Please wait a minute before asking again.'); }
