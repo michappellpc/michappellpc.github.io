@@ -128,12 +128,41 @@ async function route() {
   if (p === '' || p === 'results') refreshPeer();
   const t = Store.data.active;
   if (p === 'test' && t) return renderTest();
-  ({ '': dashboard, create: () => create(arg), flagged: flaggedPage, program: () => Program.facultyPage(), lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
+  ({ '': dashboard, create: () => create(arg, arg2), flagged: flaggedPage, program: () => Program.facultyPage(), lessons: () => (arg ? Lessons.subjectPage(arg) : Lessons.indexPage()), lesson: () => Lessons.lessonPage(arg), history: historyPage, settings, admin: () => Admin.route(arg, arg2, arg3), results: () => results(arg), review: () => review(arg) }[p] || dashboard)();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
 
 // ---------- dashboard ----------
+// "Focus areas": the member's weakest subjects (lowest percent correct, at least MIN answers), with the lessons for each and
+// a one-click practice of the questions they missed in it.
+const FOCUS_MIN = 5, FOCUS_BELOW = 80, FOCUS_SHOW = 3;
+function focusAreas() {
+  const st = Store.data.q, by = {};
+  bank.questions.forEach(q => {
+    const s = st[q.id]; if (!s || !(s.correct + s.wrong)) return;
+    const o = by[q.subject] ||= { subject: q.subject, right: 0, wrong: 0, topics: {} };
+    o.right += s.correct; o.wrong += s.wrong;
+    if (s.wrong && q.topic) o.topics[q.topic] = (o.topics[q.topic] || 0) + s.wrong;
+  });
+  const weak = Object.values(by).filter(o => o.right + o.wrong >= FOCUS_MIN && pct(o.right, o.right + o.wrong) < FOCUS_BELOW)
+    .sort((a, b) => pct(a.right, a.right + a.wrong) - pct(b.right, b.right + b.wrong) || b.wrong - a.wrong).slice(0, FOCUS_SHOW);
+  const answered = Object.values(by).reduce((a, o) => a + o.right + o.wrong, 0);
+  let body;
+  if (weak.length) {
+    body = `<p class="muted">Your lowest-scoring subjects so far. Review the lesson, then practice the questions you missed.</p><div class="focusgrid">${weak.map(o => {
+      const n = o.right + o.wrong, lessons = Lessons.sorted((bank.lessons || []).filter(l => l.subject === o.subject));
+      const topics = Object.entries(o.topics).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([t]) => esc(t));
+      return `<section class="focus"><h3>${esc(o.subject)}</h3><p class="focus-pct"><b>${pct(o.right, n)}%</b> correct <span class="muted">(${o.right} of ${n})</span></p>
+        ${topics.length ? `<p class="muted small">Most missed: ${topics.join(', ')}</p>` : ''}
+        ${lessons.length ? `<ul class="focus-lessons">${lessons.slice(0, 3).map(l => `<li><a href="#/lesson/${encodeURIComponent(l.id)}">${esc(l.title)}</a></li>`).join('')}</ul>${lessons.length > 3 ? `<p class="small"><a href="#/lessons/${encodeURIComponent(o.subject)}">All ${lessons.length} lessons in this subject</a></p>` : ''}` : '<p class="muted small">No lesson for this subject yet.</p>'}
+        <a class="btn" href="#/create/${encodeURIComponent(o.subject)}/incorrect">Practice the ones you missed</a></section>`;
+    }).join('')}</div>`;
+  } else if (answered >= FOCUS_MIN * 2) body = '<p class="muted">No weak spots right now: every subject you have practised is at 80% or better. Keep going.</p>';
+  else body = `<p class="muted">Answer at least ${FOCUS_MIN} questions in a subject and your weakest ones will show up here, with lessons to review.</p>`;
+  return `<div class="card" id="focus"><h2>Focus areas</h2>${body}</div>`;
+}
+
 function dashboard() {
   pageTitle('Dashboard');
   const st = Store.data.q, all = Object.values(st);
@@ -170,6 +199,7 @@ function dashboard() {
     <div class="card stat"><b>${c + w ? pct(c, c + w) + '%' : '—'}</b><span class="muted">Overall correct</span></div>
     ${all.some(s => s.flagged) ? `<a class="card stat statlink" href="#/flagged"><b>${all.filter(s => s.flagged).length}</b><span class="muted">Flagged &rsaquo; review</span></a>` : `<div class="card stat"><b>0</b><span class="muted">Flagged</span></div>`}
   </div>
+  ${focusAreas()}
   <div class="card"><h2>Performance by subject</h2>
     ${rows.length ? `<table><thead><tr><th>Board</th><th>Subject</th><th>Used</th><th>Correct</th><th title="Average of all members, first tries">Group</th><th><span class="sr">Progress</span></th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="muted">No questions loaded.</p>'}
   </div>
@@ -194,7 +224,7 @@ function flaggedPage() {
 }
 
 // ---------- create test ----------
-function create(preSubject) {
+function create(preSubject, preStatus) {
   pageTitle('New test');
   const boardBoxes = bank.boards.map(b => `<label class="chk"><input type="checkbox" name="board" value="${b.id}" checked> ${esc(b.name)} <span class="cnt" data-cnt="board:${b.id}"></span></label>`).join('');
   const subjects = [...new Set(Object.values(bank.subjects).flat())];
@@ -214,6 +244,7 @@ function create(preSubject) {
     const want = decodeURIComponent(preSubject);
     f.querySelectorAll('[name=subj]').forEach(e => { e.checked = e.value === want; });
   }
+  if (preStatus === 'incorrect') f.querySelectorAll('[name=status]').forEach(e => { e.checked = e.value === 'incorrect'; });   // arrived from Focus areas: just the missed questions
   const vals = n => [...f.querySelectorAll(`[name=${n}]:checked`)].map(e => e.value);
   // Does a question fit the current choices? Anything passed as null is left out of the check, so each checkbox
   // can show how many questions would apply to it given everything else that is selected.

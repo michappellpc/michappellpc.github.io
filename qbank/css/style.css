@@ -334,3 +334,9 @@ a.statlink{text-decoration:none;color:inherit;display:block}a.statlink:hover{bor
 .opt.correct .pickbar{background:var(--good)}.opt.wrong .pickbar{background:var(--bad)}
 
 label.chk .cnt{color:var(--muted);font-variant-numeric:tabular-nums}label.chk.zero{color:var(--muted)}
+
+/* ---- Focus areas ---- */
+.focusgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:8px}
+.focus{padding:14px 16px;border:1px solid var(--line);border-left:5px solid var(--bad);border-radius:8px;background:var(--card);display:flex;flex-direction:column;gap:2px}
+.focus h3{margin:0 0 2px;font-size:1.05rem}.focus-pct{margin:0}.focus-pct b{font-size:1.4rem}
+.focus-lessons{margin:6px 0 8px;padding-left:1.1em}.focus-lessons li{margin:2px 0}.focus .btn{margin-top:auto;align-self:flex-start}
