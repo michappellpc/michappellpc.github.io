@@ -65,7 +65,8 @@ async function postFeedback(it) {
   Object.entries(cfg.fields || {}).forEach(([k, entry]) => { if (entry && it[k] != null) body.append(entry, it[k]); });
   try { await fetch(cfg.formUrl, { method: 'POST', mode: 'no-cors', body }); return true; } catch { return false; }
 }
-const fbConnected = () => !!((bank.config.feedback || {}).formUrl);
+// Connected only when the form address AND every field id are set; otherwise posts would be blank, Google would reject them silently, and feedback would be lost.
+const fbConnected = () => { const f = bank.config.feedback || {}; return !!(f.formUrl && f.fields && ['question', 'category', 'comment', 'contact', 'details'].every(k => f.fields[k])); };
 async function flushFeedback() {
   if (fbFlushing || !fbConnected()) return;
   fbFlushing = true;

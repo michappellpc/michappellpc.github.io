@@ -186,12 +186,37 @@ const Mascot = (() => {
     { at: 500, abbr: 'LTC', name: 'Lieutenant Colonel' }, { at: 1000, abbr: 'COL', name: 'Colonel' }
   ];
   const rankFor = n => { let i = 0; RANKS.forEach((r, k) => { if (n >= r.at) i = k; }); return { ...RANKS[i], next: RANKS[i + 1] || null }; };
-  function insignia(abbr, px = 4) {
-    const bar = c => Array.from({ length: 3 }, () => Array.from('cccccccc'.replace(/c/g, c)));
-    const leaf = c => { const g = Array.from({ length: 9 }, () => Array(9).fill('.')); ell9(g, 4.5, 4.5, 3.4, 4.4, c); for (let y = 1; y < 8; y++) g[y][4] = 'S'; return g; };
-    const star = c => ['....c....', '....c....', '...ccc...', 'ccccccccc', '.ccccccc.', '..ccccc..', '..cc.cc..', '.cc...cc.'].map(r => Array.from(r.replace(/c/g, c)));
-    const bars = (n, c) => { const rows = []; for (let i = 0; i < n; i++) { if (i) rows.push(Array(8).fill('.')); rows.push(...bar(c)); } return rows; };
-    const g = { '2LT': () => bars(1, 'y'), '1LT': () => bars(1, 's'), CPT: () => bars(2, 's'), MAJ: () => leaf('y'), LTC: () => leaf('s'), COL: () => star('s') }[abbr]();
+  // Insignia follow AR 670-1: bars are 3/8" x 1" (tall, worn lengthwise), oak leaves are 1 1/8" high x 1" wide with the stem
+  // pointing down/outward, and the colonel's spread eagle has its head turned to the wearer's right (viewer's left).
+  const G = { fill: 'y', lit: 'J', dark: 'h' }, SV = { fill: 's', lit: 'W', dark: 'S' };
+  function barGrid(c) { // 3 wide x 8 tall: light edge, body, shaded edge
+    return Array.from({ length: 8 }, () => [c.lit, c.fill, c.dark]);
+  }
+  function leafGrid(c) { // upright oak leaf, 11 wide x 13 tall: three lobes a side, midrib, stem curving outward at the bottom
+    const half = [1, 2, 3, 2, 4, 3, 5, 3, 4, 2, 1]; // half-width per row: lobes (wide) alternate with notches
+    const g = Array.from({ length: 13 }, () => Array(11).fill('.'));
+    half.forEach((w, y) => { for (let x = 5 - w; x <= 5 + w; x++) g[y][x] = (x < 5 - 1 && y < 6) ? c.lit : x > 5 + 1 && y > 4 ? c.dark : c.fill; });
+    for (let y = 2; y <= 9; y++) g[y][5] = c.dark;   // midrib
+    g[11][5] = c.fill; g[12][6] = c.dark;            // stem
+    return g;
+  }
+  function eagleGrid(c) { // spread eagle, 23 wide x 13 tall, head turned to the viewer's left (the wearer's right)
+    const W = 23, H = 13, cx = 11, g = Array.from({ length: H }, () => Array(W).fill('.'));
+    const P = (x, y, ch) => { if (y >= 0 && y < H && x >= 0 && x < W) g[y][x] = ch; };
+    for (const side of [-1, 1]) for (let d = 2; d <= 11; d++) { // wings: upswept tips, scalloped feather edge
+      const x = cx + side * d, top = Math.round(5 - (d - 2) * .48), bot = Math.round(7.5 + Math.min(d, 5) * .2 - (d - 5) * (d > 5 ? .62 : 0)) + (d % 2 ? 0 : 1);
+      for (let y = top; y <= Math.max(top, bot); y++) P(x, y, y === top ? c.lit : d % 2 ? c.fill : c.dark);
+    }
+    for (let y = 4; y <= 9; y++) for (let x = cx - 2; x <= cx + 2; x++) P(x, y, x <= cx - 1 ? c.lit : x >= cx + 1 ? c.dark : c.fill); // body
+    for (let y = 10; y <= 12; y++) for (let x = cx - 3; x <= cx + 3; x++) P(x, y, (x + y) % 2 ? c.fill : c.dark); // tail
+    for (const [x, y] of [[cx - 3, 1], [cx - 2, 1], [cx - 1, 1], [cx - 3, 2], [cx - 2, 2], [cx - 1, 2], [cx - 2, 3], [cx - 1, 3], [cx, 3]]) P(x, y, c.lit); // head
+    P(cx - 3, 2, c.dark); // eye
+    P(cx - 4, 2, c.fill); P(cx - 5, 3, c.dark); P(cx - 4, 3, c.dark); // hooked beak, pointing left
+    return g;
+  }
+  function insignia(abbr, px = 5) {
+    const bars = (n, c) => { const rows = barGrid(c); if (n === 1) return rows; return rows.map(r => [...r, '.', '.', '.', ...r]); };
+    const g = { '2LT': () => bars(1, G), '1LT': () => bars(1, SV), CPT: () => bars(2, SV), MAJ: () => leafGrid(G), LTC: () => leafGrid(SV), COL: () => eagleGrid(SV) }[abbr]();
     const w = g[0].length, pad = g.map(r => ['.', ...r, '.']); pad.unshift(Array(w + 2).fill('.')); pad.push(Array(w + 2).fill('.'));
     return toSvg(border(pad), px, 'insignia');
   }
