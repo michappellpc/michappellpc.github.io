@@ -29,6 +29,9 @@ The dashboard cover is a built-in vector illustration. To use your own photo ins
 ## Group averages and flags
 After a member answers a question they see how many members got it right on their first try, and the same average appears in results, review and the subject table. The database only releases a figure once at least N members (set in Admin, never below 5) have answered, so no individual can be identified. After answering, members also see the percentage who picked each answer choice (first tries only, same minimum). If you rewrite a question's answer choices, its earlier picks are cleared, because they no longer describe the same options. Members can flag any question and review flagged questions from the dashboard's Flagged tile.
 
+## Focus areas
+The dashboard's **Focus areas** card lists a member's weakest subjects (below 80% correct, at least 5 answered), the most missed topics in each, links to that subject's lessons, and a button that opens a test of just the questions they missed there. It is computed on the device from their own answers, so it needs no database changes.
+
 ## Residency programs
 Admins add programs under **Admin > Overview > Residency programs**. Residents pick their program while creating an account (or later in Settings) and its faculty approve them. An account with the role **faculty** and a program gets a **Program** page with a roster, percent correct by subject, a program average, approvals and a CSV download. Faculty see progress only, never answers, notes or test history, and residents are told so up front (`js/program.js`).
 
