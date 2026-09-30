@@ -239,4 +239,23 @@ eq  "user-supplied metadata cannot make a self sign-up privileged" "member,free"
 as admin "select set_signup_open(false); commit;" >/dev/null
 root "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000f5', 'late@site.com')" >/dev/null
 eq  "with sign-up closed, a stranger gets no access" "f" "$(root "select active from profiles where email='late@site.com'")"
+echo; echo "Lessons"
+root "insert into lessons (id, boards, subject, title, tier, status, blocks) values
+  ('l-free','{aem}','S','Free lesson','free','reviewed','[]'), ('l-pro','{aem}','S','Pro lesson','pro','reviewed','[]'),
+  ('l-draft','{aem}','S','Draft lesson','free','draft','[]'), ('l-arch','{aem}','S','Archived lesson','free','reviewed','[]'),
+  ('l-img','{aem}','S','Lesson with picture','free','reviewed','[{\"type\":\"image\",\"image\":\"private:lesson.png\",\"alt\":\"x\"}]'),
+  ('l-imgdraft','{aem}','S','Draft with picture','free','draft','[{\"type\":\"image\",\"image\":\"private:lessondraft.png\",\"alt\":\"x\"}]');
+  update lessons set archived = true where id = 'l-arch';
+  insert into storage.objects (bucket_id, name) values ('question-images','lesson.png'), ('question-images','lessondraft.png');" >/dev/null
+eq  "a pro member sees the live lessons"            "3" "$(as a "select count(*) from lessons;")"
+eq  "a free member sees only free live lessons"     "2" "$(as d "select count(*) from lessons;")"
+eq  "nobody signed out sees a lesson"               "permission denied for table lessons" "$(as anon "select count(*) from lessons;" 2>&1 | sed -e 's/^ERROR:  //')"
+eq  "an unlisted person sees no lesson"             "0" "$(as c "select count(*) from lessons;")"
+eq  "a reviewer sees every lesson, draft and archived" "6" "$(as rev "select count(*) from lessons;")"
+eq  "a member cannot write a lesson"                "yes" "$(as a "insert into lessons (id,boards,subject,title) values ('m1','{aem}','S','t');" 2>&1 | grep -q 'row-level security' && echo yes)"
+eq  "a reviewer can write a lesson"                 "r1" "$(as rev "insert into lessons (id,boards,subject,title) values ('r1','{aem}','S','t') returning id;")"
+eq  "a lesson picture follows the lesson to members" "1" "$(as a "select count(*) from storage.objects where bucket_id='question-images' and name='lesson.png';")"
+eq  "a draft lesson's picture stays hidden"          "0" "$(as a "select count(*) from storage.objects where bucket_id='question-images' and name='lessondraft.png';")"
+eq  "marking a lesson reviewed records the reviewer" "rev@x" "$(as rev "update lessons set status='reviewed' where id='l-draft'; select reviewed_by from lessons where id='l-draft';" | tail -n 1)"
+eq  "editing a reviewed lesson sends it back to draft" "draft/none" "$(as admin "update lessons set status='reviewed' where id='l-free'; update lessons set title='Changed' where id='l-free'; select status||'/'||coalesce(reviewed_by,'none') from lessons where id='l-free';" | tail -n 1)"
 echo; echo "$PASS passed, $FAIL failed"; [[ $FAIL -eq 0 ]]

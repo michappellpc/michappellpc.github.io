@@ -164,6 +164,16 @@ const Cloud = (() => {
     return row;
   };
   const inList = ids => '(' + ids.map(i => '"' + String(i).replace(/"/g, '') + '"').join(',') + ')';
+  // ---- lessons ----
+  const toLesson = r => ({ id: r.id, status: r.status, reviewedBy: r.reviewed_by || undefined, boards: r.boards, subject: r.subject, title: r.title, summary: r.summary || '',
+    order: r.position, blocks: r.blocks || [], references: r.refs || [], tier: r.tier });
+  const toEditorLesson = r => ({ ...toLesson(r), archived: !!r.archived, updatedAt: r.updated_at, updatedBy: r.updated_by || '' });
+  const toLessonRow = l => { const row = { id: l.id, status: l.status, boards: l.boards, subject: l.subject, title: l.title, summary: l.summary || '', position: l.order === undefined ? 100 : l.order,
+    blocks: l.blocks, refs: l.references || [], tier: l.tier || 'pro' }; if (typeof l.archived === 'boolean') row.archived = l.archived; return row; };
+  const noLessonsTable = e => e && (e.status === 404 || e.status === 400) && /lessons|schema cache|relation/i.test(e.message || '');
+  async function allLessons(filter) {
+    return api(`/rest/v1/lessons?select=*${filter}&order=position.asc,title.asc&limit=1000`);
+  }
   const missingColumn = e => e && e.status === 400 && /archived|updated_by/i.test(e.message);
   async function allQuestions(filter) {                        // pages of 1000, oldest id first
     const rows = []; let offset = 0;
@@ -292,6 +302,21 @@ const Cloud = (() => {
         throw e;
       }
     },
+    // ---- lessons (members read reviewed ones; editors read and write all) ----
+    async lessons() {
+      try { const list = (await allLessons('&archived=eq.false')).map(toLesson); await cacheSet('lessons', { uid: uid(), at: Date.now(), list }); return list; }
+      catch (e) {
+        if (noLessonsTable(e)) return [];                                   // database not upgraded yet
+        if (!e.offline) throw e;
+        const c = await cacheGet('lessons'); if (c && c.uid === uid()) return c.list; return [];
+      }
+    },
+    async lessonsReady() { try { await api('/rest/v1/lessons?select=id&limit=1'); return true; } catch (e) { if (noLessonsTable(e)) return false; throw e; } },
+    async editorLessons() { return (await allLessons('')).map(toEditorLesson); },
+    async saveLessons(list) { for (let i = 0; i < list.length; i += 50) await api('/rest/v1/lessons?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: list.slice(i, i + 50).map(toLessonRow) }); },
+    patchLessons: (ids, patch) => api('/rest/v1/lessons?id=in.' + encodeURIComponent(inList(ids)), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: patch }),
+    deleteLessons: ids => api('/rest/v1/lessons?id=in.' + encodeURIComponent(inList(ids)), { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+    async lessonUpdatedAt(id) { const r = await api('/rest/v1/lessons?select=updated_at&id=eq.' + encodeURIComponent(id)); return r && r[0] ? r[0].updated_at : null; },
     // ---- for admins and reviewers (the database refuses everyone else) ----
     async editorReady() { try { await api('/rest/v1/questions?select=archived,updated_by&limit=1'); return true; } catch (e) { if (missingColumn(e)) return false; throw e; } },
     async editorQuestions() { return (await allQuestions('')).map(toEditorQuestion); },

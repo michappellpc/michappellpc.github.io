@@ -94,7 +94,7 @@
 
   // Turns whatever was pasted into a list of questions. Forgiving: it finds the JSON inside a chat reply
   // (code fences, prose before and after, a table after the list), and tells a person where a mistake is.
-  function parsePaste(text) {
+  function parsePaste(text, noun = 'question') {
     let s = String(text || '').replace(/^\uFEFF/, '').trim();
     if (!s) return { error: 'Nothing pasted yet.' };
     const fence = s.match(/```(?:json|JSON)?[ \t]*\r?\n([\s\S]*?)```/);
@@ -117,11 +117,12 @@
       }
     }
     if (v && !Array.isArray(v) && Array.isArray(v.questions)) v = v.questions;
+    if (v && !Array.isArray(v) && Array.isArray(v.lessons)) v = v.lessons;
     if (v && !Array.isArray(v) && typeof v === 'object') v = [v];
-    if (!Array.isArray(v)) return { error: 'Expected a list of questions.' };
+    if (!Array.isArray(v)) return { error: `Expected a list of ${noun}s.` };
     if (!v.length) return { error: 'The list is empty.' };
     const bad = v.findIndex(x => !x || typeof x !== 'object' || Array.isArray(x));
-    if (bad >= 0) return { error: `Item ${bad + 1} in the list is not a question.` };
+    if (bad >= 0) return { error: `Item ${bad + 1} in the list is not a ${noun}.` };
     return { list: v };
   }
 
