@@ -4,24 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Flight Surgeon Valley</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; background: #1d2a1f; color: #f3efe0; font-family: "Trebuchet MS", system-ui, sans-serif; overflow: hidden; touch-action: none; }
+  html, body { height: 100%; background: #1d2a1f; color: #f3efe0; font-family: "Press Start 2P", "Courier New", monospace; overflow: hidden; touch-action: none; }
   #wrap { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  #hud { width: min(100vw, 133.3vh, 960px); display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 10px; background: #2f4a33; border-bottom: 3px solid #1b2b1e; font-size: clamp(11px, 2.4vw, 15px); }
+  #hud { width: min(100vw, 133.3vh, 960px); display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 10px; background: #2f4a33; border-bottom: 3px solid #1b2b1e; font-size: clamp(7px, 1.5vw, 10px); line-height: 1.5; }
   #hud b { color: #ffd966; }
   #bar { display: inline-block; width: 70px; height: 9px; background: #1b2b1e; border-radius: 5px; vertical-align: middle; overflow: hidden; }
   #bar i { display: block; height: 100%; background: #7fd36b; width: 50%; }
   #stage { position: relative; width: min(100vw, 133.3vh, 960px); aspect-ratio: 4 / 3; }
-  canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; background: #6aa84f; }
-  #toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: 92%; background: rgba(20,28,22,.92); border: 2px solid #ffd966; padding: 8px 14px; border-radius: 8px; font-size: clamp(12px, 2.6vw, 16px); display: none; text-align: center; z-index: 5; }
-  #prompt { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); background: rgba(20,28,22,.85); padding: 4px 12px; border-radius: 14px; font-size: clamp(11px, 2.4vw, 14px); display: none; z-index: 4; }
+  canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; background: #6aa84f; }
+  #toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: 92%; background: rgba(20,28,22,.92); border: 2px solid #ffd966; padding: 8px 14px; border-radius: 0; font-size: clamp(8px, 1.8vw, 11px); line-height: 1.6; display: none; text-align: center; z-index: 5; }
+  #prompt { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); background: rgba(20,28,22,.85); padding: 4px 12px; border-radius: 14px; font-size: clamp(7px, 1.6vw, 10px); display: none; z-index: 4; }
   #modal { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 10; padding: 10px; }
-  #box { background: #f6ecd2; color: #2b2418; border: 4px solid #5b4a2b; border-radius: 10px; padding: 14px 16px; width: min(560px, 100%); max-height: 100%; overflow-y: auto; font-size: clamp(13px, 2.8vw, 17px); line-height: 1.4; }
+  #box { background: #f6ecd2; color: #2b2418; border: 4px solid #5b4a2b; border-radius: 0; box-shadow: 0 0 0 4px #2a2118; padding: 14px 16px; width: min(560px, 100%); max-height: 100%; overflow-y: auto; font-size: clamp(9px, 1.9vw, 12px); line-height: 1.7; }
   #box h2 { font-size: 1.15em; margin-bottom: 6px; color: #7a2a1a; }
   #box p { margin-bottom: 8px; }
   #box .tag { font-size: .8em; color: #6b5d3d; }
-  #box button { display: block; width: 100%; text-align: left; margin-top: 6px; padding: 8px 10px; font: inherit; background: #fff8e1; border: 2px solid #5b4a2b; border-radius: 6px; cursor: pointer; color: inherit; }
+  #box button { display: block; width: 100%; text-align: left; margin-top: 6px; padding: 8px 10px; font: inherit; background: #fff8e1; border: 2px solid #5b4a2b; border-radius: 0; cursor: pointer; color: inherit; }
   #box button:hover, #box button:focus { background: #ffe9a8; outline: none; }
   #box button.dis { opacity: .5; cursor: not-allowed; }
   #pad { display: none; position: absolute; inset: auto 0 0 0; height: 0; z-index: 6; }
@@ -33,7 +35,7 @@
 <div id="wrap">
   <div id="hud"></div>
   <div id="stage">
-    <canvas id="c" width="640" height="480"></canvas>
+    <canvas id="c" width="320" height="240"></canvas>
     <div id="prompt"></div>
     <div id="toast"></div>
     <div id="modal"><div id="box"></div></div>
@@ -80,6 +82,8 @@ const solids = [];
 buildings.forEach(b => solids.push({ x: b.x * T, y: b.y * T, w: b.w * T, h: b.h * T }));
 stations.forEach(s => solids.push({ x: s.x * T, y: s.y * T, w: T, h: T }));
 planes.forEach(p => solids.push({ x: p.x * T, y: p.y * T + 6, w: T * 2, h: T - 10 }));
+const trees = [[0, 1], [0, 3], [7, 2], [11, 1], [12, 3], [19, 3], [6, 8], [11, 8], [16, 8]];
+trees.forEach(t => solids.push({ x: t[0] * T + 8, y: t[1] * T + 8, w: T - 16, h: T - 8 }));
 
 // ---------- state ----------
 const RANKS = [[0, '2nd Lt'], [10, '1st Lt'], [25, 'Captain'], [45, 'Major'], [70, 'Lt Col'], [100, 'Colonel']];
@@ -103,7 +107,7 @@ const npcs = [
   { id: 'park', name: 'Col Park (Commander)', emoji: '🎖️', x: 14 * T, y: 11.4 * T, bounds: [12, 11, 19, 12],
     lines: ['Keep my aircrew healthy and current, Doc. That\'s the whole job.', 'Inspections are coming. I like what I\'m seeing.', 'Reputation is built one good decision at a time.'] },
 ];
-npcs.forEach(n => { n.tx = n.x; n.ty = n.y; n.wait = Math.random() * 2; });
+npcs.forEach(n => { n.tx = n.x; n.ty = n.y; n.wait = Math.random() * 2; n.fx = 1; n.mv = false; });
 
 // ---------- cases ----------
 // tier 1-3. options[0] is always the correct one in source; shuffled at runtime.
@@ -329,7 +333,7 @@ document.querySelectorAll('.pb').forEach(b => {
 });
 
 // ---------- movement ----------
-const P = { w: 18, h: 14 };
+const P = { w: 18, h: 14, fx: 1 };
 function hits(x, y) {
   if (x < 0 || y < 0 || x + P.w > W * T || y + P.h > H * T) return true;
   for (const s of solids) if (x < s.x + s.w && x + P.w > s.x && y < s.y + s.h && y + P.h > s.y) return true;
@@ -346,7 +350,7 @@ function move(dt) {
   const nx = S.pos.x + dx * sp, ny = S.pos.y + dy * sp;
   if (!hits(nx, S.pos.y)) S.pos.x = nx;
   if (!hits(S.pos.x, ny)) S.pos.y = ny;
-  P.moving = dx || dy;
+  P.moving = dx || dy; if (dx) P.fx = dx;
 }
 function npcBlocked(x, y, self) {
   if (x < 0 || y < 0 || x + 20 > W * T || y + 14 > H * T) return true;
@@ -362,6 +366,7 @@ function updateNpcs(dt) {
       n.wait = 2 + Math.random() * 4;
     }
     const dx = n.tx - n.x, dy = n.ty - n.y, d = Math.hypot(dx, dy);
+    n.mv = d > 2; if (Math.abs(dx) > .5) n.fx = dx;
     if (d > 2) {
       const sp = 38 * dt, nx = n.x + dx / d * sp, ny = n.y + dy / d * sp;
       if (!npcBlocked(nx, ny, n)) { n.x = nx; n.y = ny; } else { n.tx = n.x; n.ty = n.y; }
@@ -380,57 +385,233 @@ function findNear() {
 }
 function interact() { if (near) { if (near.kind === 's') actions[near.o.id](); else talk(near.o); } }
 
-// ---------- rendering ----------
-function draw() {
-  // ground
-  ctx.fillStyle = '#6aa84f'; ctx.fillRect(0, 0, W * T, H * T);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ((x * 7 + y * 13) % 5 === 0) { ctx.fillStyle = '#62a047'; ctx.fillRect(x * T + 8, y * T + 10, 6, 3); }
-  // paths
-  ctx.fillStyle = '#d9c9a0'; ctx.fillRect(0, 5 * T, W * T, 2 * T); ctx.fillRect(0, 11 * T, W * T, T);
-  ctx.fillStyle = '#cdbb8c'; for (let x = 0; x < W * 2; x++) ctx.fillRect(x * 16 + 4, 5 * T + 28, 6, 2);
+// ---------- rendering (pixel art: 320x240 internal canvas, scaled up crisp) ----------
+const bg = document.createElement('canvas'); bg.width = 320; bg.height = 240;
+const bgc = bg.getContext('2d');
+const rc = (c, x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
+const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967295; };
+const shade = (hex, f) => {
+  const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  const t = f < 0 ? 0 : 255, p = Math.abs(f);
+  r = Math.round((t - r) * p + r); g = Math.round((t - g) * p + g); b = Math.round((t - b) * p + b);
+  return 'rgb(' + r + ',' + g + ',' + b + ')';
+};
+const INK = '#2a2118';
+
+// tiny 3x5 bitmap font for signs
+const GLYPH = { A:'010101111101101', B:'110101110101110', C:'011100100100011', D:'110101101101110', E:'111100110100111', F:'111100110100100', G:'011100101101011', H:'101101111101101', I:'111010010010111', L:'100100100100111', M:'101111111101101', N:'110101101101101', O:'010101101101010', P:'110101110100100', Q:'010101101110011', R:'110101110101101', S:'011100010001110', T:'111010010010010', U:'101101101101111', Y:'101101010010010' };
+function pxText(c, s, x, y, col) {
+  for (const ch of s) {
+    const g = GLYPH[ch];
+    if (g) for (let i = 0; i < 15; i++) if (g[i] === '1') rc(c, x + (i % 3), y + Math.floor(i / 3), 1, 1, col);
+    x += 4;
+  }
+}
+
+function drawGrassAndPaths(c) {
+  const GRASS = ['#6dae46', '#68a842', '#72b54a'];
+  for (let ty = 0; ty < 15; ty++) for (let tx = 0; tx < 20; tx++) {
+    const px = tx * 16, py = ty * 16;
+    rc(c, px, py, 16, 16, GRASS[Math.floor(hash(tx, ty) * 3)]);
+    for (let k = 0; k < 4; k++) {
+      const gx = px + Math.floor(hash(tx * 5 + k, ty + 7) * 14), gy = py + Math.floor(hash(tx + 3, ty * 5 + k) * 13);
+      rc(c, gx, gy, 1, 2, '#5b9838'); rc(c, gx + 1, gy, 1, 1, '#86c85b');
+    }
+    if (hash(tx + 11, ty + 5) > 0.93) {
+      const fx = px + 4 + Math.floor(hash(tx, ty) * 8), fy = py + 4 + Math.floor(hash(ty, tx) * 8);
+      const col = ['#f06292', '#ffd54f', '#ffffff', '#ba68c8'][Math.floor(hash(tx * 2, ty * 3) * 4)];
+      rc(c, fx, fy, 1, 1, col); rc(c, fx - 1, fy, 1, 1, col); rc(c, fx, fy - 1, 1, 1, col); rc(c, fx + 1, fy, 1, 1, col); rc(c, fx, fy + 1, 1, 1, col); rc(c, fx, fy, 1, 1, '#fff3a0');
+    }
+  }
+  // dirt path rows
+  const dirt = (y0, y1) => {
+    for (let y = y0; y < y1; y++) for (let x = 0; x < 320; x++) {
+      const h = hash(x, y);
+      rc(c, x, y, 1, 1, h < .08 ? '#b48a4f' : h > .94 ? '#dcc08a' : '#c9a66b');
+    }
+    for (let x = 0; x < 320; x++) {
+      if (hash(x, y0) < .75) rc(c, x, y0, 1, 1, '#a47c45');
+      if (hash(x, y1) < .75) rc(c, x, y1 - 1, 1, 1, '#a47c45');
+    }
+  };
+  dirt(80, 112); dirt(176, 192);
   // tarmac
-  ctx.fillStyle = '#5a5f66'; ctx.fillRect(0, 12 * T, W * T, 3 * T);
-  ctx.fillStyle = '#e5c84a'; for (let x = 0; x < W * 2; x++) ctx.fillRect(x * 16 + 3, 14 * T + 14, 10, 3);
-  // buildings
-  buildings.forEach(b => {
-    const x = b.x * T, y = b.y * T, w = b.w * T, h = b.h * T;
-    ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.fillRect(x + 4, y + 4, w, h);
-    ctx.fillStyle = b.body; ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = b.roof; ctx.fillRect(x, y, w, 20);
-    ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(b.label, x + w / 2, y + 14);
-    ctx.fillStyle = '#8fb8d9';
-    for (let wx = x + 12; wx < x + w - 20; wx += 34) ctx.fillRect(wx, y + 34, 16, 14);
+  for (let y = 192; y < 240; y++) for (let x = 0; x < 320; x++) {
+    const h = hash(x + 99, y);
+    rc(c, x, y, 1, 1, h < .1 ? '#444a52' : h > .93 ? '#5a606a' : '#4d535c');
+  }
+  for (let x = 0; x < 320; x++) if (x % 8 < 5) rc(c, x, 192, 1, 1, '#d8d8d8');
+  for (let x = 0; x < 320; x += 14) rc(c, x + 3, 227, 8, 2, '#e5c84a');
+}
+
+function drawBuilding(c, b) {
+  const x = b.x * 16, y = b.y * 16, w = b.w * 16, h = b.h * 16;
+  rc(c, x + 2, y + h, w, 3, 'rgba(0,0,0,.22)');
+  rc(c, x, y, w, h, b.body);
+  for (let yy = y + 17; yy < y + h - 1; yy += 4) rc(c, x + 1, yy, w - 2, 1, shade(b.body, -.1));
+  // roof with shingles
+  rc(c, x, y, w, 14, b.roof);
+  for (let r = 0; r < 4; r++) {
+    const ry = y + 2 + r * 3;
+    rc(c, x + 1, ry + 2, w - 2, 1, shade(b.roof, -.25));
+    for (let sx = x + 1 + (r % 2) * 3; sx < x + w - 1; sx += 6) rc(c, sx, ry, 1, 2, shade(b.roof, -.2));
+  }
+  rc(c, x, y, w, 1, shade(b.roof, .3));
+  rc(c, x, y + 14, w, 2, shade(b.body, -.3));
+  // outline
+  rc(c, x, y, w, 1, INK); rc(c, x, y + h - 1, w, 1, INK); rc(c, x, y, 1, h, INK); rc(c, x + w - 1, y, 1, h, INK);
+  // sign plaque
+  const tw = b.label.length * 4 - 1, sx = x + Math.floor((w - tw) / 2);
+  rc(c, sx - 2, y + 3, tw + 4, 8, INK); rc(c, sx - 1, y + 4, tw + 2, 6, '#3a2f22');
+  pxText(c, b.label, sx, y + 5, '#fff3d0');
+  // windows
+  const door = stations.find(s => s.x >= b.x && s.x < b.x + b.w && s.y === b.y + b.h);
+  const dx = door ? door.x * 16 + 4 : -99;
+  for (let wx = x + 7; wx + 8 < x + w - 4; wx += 17) {
+    if (wx + 8 > dx - 4 && wx < dx + 12) continue;
+    rc(c, wx, y + 19, 8, 9, INK); rc(c, wx + 1, y + 20, 6, 7, '#9fd3ea');
+    rc(c, wx + 3, y + 20, 1, 7, INK); rc(c, wx + 1, y + 23, 6, 1, INK);
+    rc(c, wx + 1, y + 20, 2, 1, '#e8f7ff');
+    rc(c, wx - 1, y + 28, 10, 1, shade(b.body, -.25));
+  }
+  // door
+  if (door) {
+    rc(c, dx, y + h - 12, 8, 12, INK); rc(c, dx + 1, y + h - 11, 6, 11, '#8a5a2b');
+    rc(c, dx + 1, y + h - 11, 6, 1, '#a8733a'); rc(c, dx + 5, y + h - 6, 1, 1, '#ffd34d');
+    rc(c, dx + 3, y + h - 11, 1, 11, '#6b4a2a');
+  }
+}
+
+function drawTree(c, tx, ty) {
+  const px = tx * 16, py = ty * 16;
+  rc(c, px + 3, py + 14, 10, 2, 'rgba(0,0,0,.22)');
+  rc(c, px + 6, py + 10, 4, 6, '#5a3d20'); rc(c, px + 6, py + 10, 1, 6, '#7a5530');
+  const rows = [[1, 5, 11], [2, 3, 13], [3, 2, 14], [4, 1, 15], [5, 1, 15], [6, 1, 15], [7, 2, 14], [8, 3, 13], [9, 4, 12], [10, 6, 10]];
+  rows.forEach(([r, a, b]) => rc(c, px + a - 1, py + r, b - a + 2, 1, '#2f6b2a'));
+  rows.forEach(([r, a, b]) => rc(c, px + a, py + r, b - a, 1, '#3f8f35'));
+  rows.slice(0, 6).forEach(([r, a]) => rc(c, px + a + 1, py + r + 1, 3, 1, '#63b84e'));
+  rc(c, px + 5, py + 3, 2, 1, '#86d36a'); rc(c, px + 9, py + 6, 2, 1, '#2f6b2a'); rc(c, px + 4, py + 7, 3, 1, '#2f6b2a');
+}
+
+function buildBG() {
+  drawGrassAndPaths(bgc);
+  buildings.forEach(b => drawBuilding(bgc, b));
+  trees.forEach(t => drawTree(bgc, t[0], t[1]));
+}
+
+// station sprites (16x16)
+function crate(c, x, y) {
+  rc(c, x, y, 7, 7, '#4a3319'); rc(c, x + 1, y + 1, 5, 5, '#a9753c');
+  rc(c, x + 1, y + 3, 5, 1, '#7a5226'); rc(c, x + 1, y + 1, 5, 1, '#c68f50');
+}
+const STATION_ART = {
+  sick: c => { rc(c, 7, 9, 2, 7, '#6b4a2a'); rc(c, 2, 1, 12, 9, INK); rc(c, 3, 2, 10, 7, '#f5f5f5'); rc(c, 7, 3, 2, 5, '#d63a3a'); rc(c, 5, 4, 6, 2, '#d63a3a'); },
+  supply: c => { crate(c, 1, 9); crate(c, 8, 9); crate(c, 4, 2); },
+  bed: c => { rc(c, 1, 4, 14, 11, INK); rc(c, 2, 5, 12, 9, '#8a5a2b'); rc(c, 2, 5, 12, 7, '#f2f2f2'); rc(c, 3, 6, 4, 3, '#dfe8f5'); rc(c, 7, 6, 7, 6, '#4a78c2'); rc(c, 7, 6, 7, 1, '#7aa3e0'); rc(c, 2, 12, 12, 2, '#6b4a2a'); },
+  dfac: c => {
+    rc(c, 1, 8, 14, 2, '#8a5a2b'); rc(c, 1, 8, 14, 1, '#a8733a'); rc(c, 2, 10, 2, 5, '#6b4a2a'); rc(c, 12, 10, 2, 5, '#6b4a2a');
+    rc(c, 5, 4, 6, 4, '#7b8491'); rc(c, 4, 4, 8, 1, '#aab2bd'); rc(c, 5, 4, 6, 1, '#aab2bd'); rc(c, 11, 7, 3, 1, '#fff');
+    const t = (performance.now() / 300) | 0; rc(c, 6 + (t % 2), 1, 1, 2, '#ffffff'); rc(c, 9 - (t % 2), 0, 1, 3, '#ffffff');
+  },
+  gym: c => {
+    rc(c, 1, 7, 14, 2, '#9aa1ab'); rc(c, 1, 3, 2, 10, INK); rc(c, 1, 4, 2, 8, '#c23b3b'); rc(c, 4, 5, 1, 6, '#444');
+    rc(c, 13, 3, 2, 10, INK); rc(c, 13, 4, 2, 8, '#c23b3b'); rc(c, 11, 5, 1, 6, '#444');
+  },
+  library: c => {
+    rc(c, 1, 1, 14, 14, INK); rc(c, 2, 2, 12, 12, '#8a5a2b'); rc(c, 2, 7, 12, 1, '#4a3319');
+    const cols = ['#c23b3b', '#3b7bc2', '#e0b83a', '#3b9a5a', '#8a3bc2', '#c27a3b'];
+    for (let i = 0; i < 6; i++) { rc(c, 3 + i * 2, 3 + (i % 2), 2, 4 - (i % 2), cols[i]); rc(c, 3 + i * 2, 9 + ((i + 1) % 2), 2, 4 - ((i + 1) % 2), cols[(i + 2) % 6]); }
+  },
+  flight: c => {
+    rc(c, 3, 2, 1, 13, '#9aa1ab'); rc(c, 2, 14, 3, 1, '#555');
+    const hs = [5, 4, 3, 2]; hs.forEach((h, i) => rc(c, 4 + i * 3, 2 + ((5 - h) >> 1), 3, h, i % 2 ? '#ffffff' : '#ff7a1a'));
+  },
+};
+function drawStation(c, s) {
+  c.save(); c.translate(s.x * 16, s.y * 16);
+  rc(c, 0, 0, 16, 16, '#cdbd94'); rc(c, 0, 0, 16, 1, '#a8946a'); rc(c, 0, 15, 16, 1, '#a8946a'); rc(c, 0, 0, 1, 16, '#a8946a'); rc(c, 15, 0, 1, 16, '#a8946a');
+  STATION_ART[s.id](c); c.restore();
+}
+
+function drawPlane(c, p) {
+  const x = p.x * 16, y = p.y * 16;
+  rc(c, x + 4, y + 14, 28, 2, 'rgba(0,0,0,.25)');
+  rc(c, x + 1, y + 1, 6, 7, '#8f96a1'); rc(c, x + 2, y, 4, 2, '#8f96a1');
+  rc(c, x + 2, y + 4, 29, 8, INK); rc(c, x + 3, y + 5, 27, 6, '#d7dbe0'); rc(c, x + 3, y + 9, 27, 2, '#9aa1ab'); rc(c, x + 3, y + 5, 27, 1, '#f1f3f5');
+  rc(c, x + 26, y + 6, 4, 2, '#2b4a70'); rc(c, x + 10, y + 6, 3, 3, '#2b4a9a'); rc(c, x + 11, y + 7, 1, 1, '#fff');
+  rc(c, x + 14, y + 10, 10, 3, '#7e8590'); rc(c, x + 14, y + 12, 10, 1, INK);
+  rc(c, x + 10, y + 12, 3, 3, INK); rc(c, x + 22, y + 12, 3, 3, INK);
+  rc(c, x + 31, y + 4, 1, 8, '#bbb');
+  rc(c, x + 5, y + 6, 4, 1, '#3b5b2e');
+}
+
+// characters: 12x16 sprite, 'o' outline, 'h' hair, 's' skin, 'e' eye, 'b' body, 'l' legs, 'f' boots
+const CHAR_TOP = [
+  '....oooo....', '...ohhhho...', '..ohhhhhho..', '..ohssssho..', '..osesseso..', '..osssssso..', '...ossso....',
+  '..obbbbbo...', '.obbbbbbbo..', '.osbbbbbso..', '.osbbbbbso..', '..obbbbbo...', '..ollllo....',
+];
+const CHAR_LEGS = [
+  ['..olo.olo...', '..olo.olo...', '..ofo.ofo...'],
+  ['..olo.olo...', '..olo..olo..', '..ofo..ofo..'],
+  ['..olo.olo...', '.olo...olo..', '.ofo...ofo..'],
+];
+const CROSS = [[5, 8, '#d63a3a'], [4, 9, '#d63a3a'], [5, 9, '#d63a3a'], [6, 9, '#d63a3a'], [5, 10, '#d63a3a'], [4, 8, '#fff'], [6, 8, '#fff'], [4, 10, '#fff'], [6, 10, '#fff']];
+const LOOKS = {
+  me:     { hair: '#4a2f1a', skin: '#f2c9a0', body: '#5d7a3e', legs: '#4a6330', acc: CROSS },
+  rivera: { hair: '#dcdcdc', skin: '#d9a77c', body: '#5a6b44', legs: '#4a5a38', acc: [[3, 3, '#3a4a66'], [4, 3, '#3a4a66'], [5, 3, '#3a4a66'], [6, 3, '#3a4a66'], [7, 3, '#3a4a66'], [8, 3, '#3a4a66']] },
+  okafor: { hair: '#2b1b10', skin: '#8d5a3b', body: '#3e7cb1', legs: '#34669a', acc: [[4, 8, '#9aa1ab'], [4, 9, '#9aa1ab'], [5, 10, '#9aa1ab']] },
+  bell:   { hair: '#bdbdbd', skin: '#e3b48a', body: '#2c2c33', legs: '#2c2c33', acc: [[5, 7, '#ffffff']] },
+  park:   { hair: '#e6e6e6', skin: '#e0ac85', body: '#3d5a3a', legs: '#33492f', acc: [[3, 8, '#ffd34d'], [8, 8, '#ffd34d'], [3, 9, '#ffd34d'], [8, 9, '#ffd34d'], [6, 10, '#d63a3a'], [7, 10, '#2b4a9a']] },
+};
+function drawChar(c, cx, bottom, look, frame, flip) {
+  const L = LOOKS[look], x0 = cx - 6, y0 = bottom - 16;
+  const col = { o: INK, h: L.hair, s: L.skin, e: '#222', b: L.body, l: L.legs, f: '#3a2a1a' };
+  rc(c, cx - 4, bottom - 1, 8, 2, 'rgba(0,0,0,.25)');
+  const rows = CHAR_TOP.concat(CHAR_LEGS[frame]);
+  for (let r = 0; r < 16; r++) for (let q = 0; q < 12; q++) {
+    const ch = rows[r][q]; if (ch === '.') continue;
+    rc(c, x0 + (flip ? 11 - q : q), y0 + r, 1, 1, col[ch]);
+  }
+  L.acc.forEach(a => rc(c, x0 + (flip ? 11 - a[0] : a[0]), y0 + a[1], 1, 1, a[2]));
+}
+
+function corners(c, x, y, w, h, col) {
+  rc(c, x, y, 3, 1, col); rc(c, x, y, 1, 3, col);
+  rc(c, x + w - 3, y, 3, 1, col); rc(c, x + w - 1, y, 1, 3, col);
+  rc(c, x, y + h - 1, 3, 1, col); rc(c, x, y + h - 3, 1, 3, col);
+  rc(c, x + w - 3, y + h - 1, 3, 1, col); rc(c, x + w - 1, y + h - 3, 1, 3, col);
+}
+
+function draw() {
+  const tm = performance.now() / 1000;
+  ctx.drawImage(bg, 0, 0);
+  stations.forEach(s => drawStation(ctx, s));
+  const ents = [];
+  planes.forEach(p => ents.push({ y: p.y * 16 + 16, f: () => drawPlane(ctx, p) }));
+  npcs.forEach(n => {
+    const frame = n.mv ? [0, 1, 0, 2][Math.floor(tm * 7) % 4] : 0;
+    const cx = Math.round((n.x + 10) / 2), bot = Math.round((n.y + 14) / 2) + 1;
+    ents.push({ y: bot, f: () => drawChar(ctx, cx, bot, n.id, frame, n.fx < 0) });
   });
-  // planes
-  ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-  ctx.font = '40px sans-serif';
-  planes.forEach(p => ctx.fillText('✈️', p.x * T + T, p.y * T + T / 2));
-  // stations
-  ctx.font = '26px sans-serif';
-  stations.forEach(s => {
-    ctx.fillStyle = 'rgba(255,248,225,.85)'; ctx.fillRect(s.x * T + 1, s.y * T + 1, T - 2, T - 2);
-    ctx.fillText(s.emoji, (s.x + .5) * T, (s.y + .5) * T + 2);
-  });
-  // entities sorted by y
-  const ents = npcs.map(n => ({ y: n.y, e: n.emoji, x: n.x + 10, sz: 26, name: n.name.split(' (')[0] }));
-  ents.push({ y: S.pos.y, e: '🧑‍⚕️', x: S.pos.x + P.w / 2, sz: 28, me: true });
-  ents.sort((a, b) => a.y - b.y);
-  ents.forEach(en => {
-    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(en.x, en.y + 15, 10, 4, 0, 0, 7); ctx.fill();
-    ctx.font = en.sz + 'px sans-serif'; ctx.fillText(en.e, en.x, en.y + 2);
-    if (en.me) { ctx.font = 'bold 10px sans-serif'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; ctx.strokeText('You', en.x, en.y - 18); ctx.fillText('You', en.x, en.y - 18); }
-  });
-  // highlight
+  {
+    const frame = P.moving ? [0, 1, 0, 2][Math.floor(tm * 8) % 4] : 0;
+    const cx = Math.round((S.pos.x + P.w / 2) / 2), bot = Math.round((S.pos.y + P.h) / 2) + 1;
+    ents.push({ y: bot, f: () => drawChar(ctx, cx, bot, 'me', frame, P.fx < 0) });
+  }
+  ents.sort((a, b) => a.y - b.y).forEach(e => e.f());
   if (near && !modalOpen) {
-    ctx.strokeStyle = '#ffd966'; ctx.lineWidth = 2;
-    if (near.kind === 's') ctx.strokeRect(near.o.x * T + 1, near.o.y * T + 1, T - 2, T - 2);
-    else ctx.strokeRect(near.o.x - 2, near.o.y - 14, 24, 32);
+    const blink = Math.floor(tm * 3) % 2 ? '#ffd966' : '#fff3b0';
+    if (near.kind === 's') corners(ctx, near.o.x * 16, near.o.y * 16, 16, 16, blink);
+    else {
+      const cx = Math.round((near.o.x + 10) / 2), ty = Math.round(near.o.y / 2) - 12 + (Math.floor(tm * 3) % 2);
+      rc(ctx, cx - 2, ty, 5, 1, blink); rc(ctx, cx - 1, ty + 1, 3, 1, blink); rc(ctx, cx, ty + 2, 1, 1, blink);
+    }
   }
   // day/night
   const t = S.min / 60; let a = 0;
   if (t >= 18 && t < 22) a = (t - 18) / 4 * .5; else if (t >= 22) a = .5;
   if (t < 7) a = (7 - t) * .25;
-  if (a > 0) { ctx.fillStyle = 'rgba(10,15,50,' + a + ')'; ctx.fillRect(0, 0, W * T, H * T); }
+  if (a > 0) { ctx.fillStyle = 'rgba(14,18,60,' + a + ')'; ctx.fillRect(0, 0, 320, 240); }
 }
 
 function hud() {
@@ -438,11 +619,11 @@ function hud() {
   const next = RANKS[S.rank + 1];
   $('hud').innerHTML =
     '<span>Day <b>' + S.day + '</b> ' + clock(S.min) + '</span>' +
-    '<span>⚡ <span id="bar"><i style="width:' + pct + '%"></i></span> ' + Math.round(S.energy) + '/' + S.maxE + '</span>' +
-    '<span>💵 <b>$' + S.money + '</b></span>' +
-    '<span>📦 <b>' + S.supplies + '</b></span>' +
-    '<span>🎖️ <b>' + rankName() + '</b> (rep ' + S.rep + (next ? '/' + next[0] : '') + ')</span>' +
-    '<span>🩺 Lv <b>' + S.level + '</b> (' + Math.floor(S.xp) + '/' + need() + ')</span>';
+    '<span>EN <span id="bar"><i style="width:' + pct + '%"></i></span> ' + Math.round(S.energy) + '/' + S.maxE + '</span>' +
+    '<span>$<b>' + S.money + '</b></span>' +
+    '<span>SUP <b>' + S.supplies + '</b></span>' +
+    '<span><b>' + rankName() + '</b> (rep ' + S.rep + (next ? '/' + next[0] : '') + ')</span>' +
+    '<span>LV <b>' + S.level + '</b> (' + Math.floor(S.xp) + '/' + need() + ')</span>';
 }
 
 // ---------- main loop ----------
@@ -471,6 +652,7 @@ if (S.day === 1 && S.stats.treated === 0 && S.min === 360) {
     '<p class="tag">Fictional game for fun and learning. Not medical advice.</p>',
     [{ label: 'Start the day', fn: null }]);
 }
+buildBG();
 requestAnimationFrame(frame);
 })();
 </script>
