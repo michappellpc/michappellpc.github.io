@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Flight Surgeon Valley</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #1d2a1f; color: #f3efe0; font-family: "Trebuchet MS", system-ui, sans-serif; overflow: hidden; touch-action: none; }
+  #wrap { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  #hud { width: min(100vw, 133.3vh, 960px); display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 10px; background: #2f4a33; border-bottom: 3px solid #1b2b1e; font-size: clamp(11px, 2.4vw, 15px); }
+  #hud b { color: #ffd966; }
+  #bar { display: inline-block; width: 70px; height: 9px; background: #1b2b1e; border-radius: 5px; vertical-align: middle; overflow: hidden; }
+  #bar i { display: block; height: 100%; background: #7fd36b; width: 50%; }
+  #stage { position: relative; width: min(100vw, 133.3vh, 960px); aspect-ratio: 4 / 3; }
+  canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; background: #6aa84f; }
+  #toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: 92%; background: rgba(20,28,22,.92); border: 2px solid #ffd966; padding: 8px 14px; border-radius: 8px; font-size: clamp(12px, 2.6vw, 16px); display: none; text-align: center; z-index: 5; }
+  #prompt { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); background: rgba(20,28,22,.85); padding: 4px 12px; border-radius: 14px; font-size: clamp(11px, 2.4vw, 14px); display: none; z-index: 4; }
+  #modal { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 10; padding: 10px; }
+  #box { background: #f6ecd2; color: #2b2418; border: 4px solid #5b4a2b; border-radius: 10px; padding: 14px 16px; width: min(560px, 100%); max-height: 100%; overflow-y: auto; font-size: clamp(13px, 2.8vw, 17px); line-height: 1.4; }
+  #box h2 { font-size: 1.15em; margin-bottom: 6px; color: #7a2a1a; }
+  #box p { margin-bottom: 8px; }
+  #box .tag { font-size: .8em; color: #6b5d3d; }
+  #box button { display: block; width: 100%; text-align: left; margin-top: 6px; padding: 8px 10px; font: inherit; background: #fff8e1; border: 2px solid #5b4a2b; border-radius: 6px; cursor: pointer; color: inherit; }
+  #box button:hover, #box button:focus { background: #ffe9a8; outline: none; }
+  #box button.dis { opacity: .5; cursor: not-allowed; }
+  #pad { display: none; position: absolute; inset: auto 0 0 0; height: 0; z-index: 6; }
+  @media (pointer: coarse) { #pad { display: block; } }
+  .pb { position: fixed; width: 58px; height: 58px; border-radius: 50%; background: rgba(255,255,255,.22); border: 2px solid rgba(255,255,255,.5); color: #fff; font-size: 24px; display: flex; align-items: center; justify-content: center; user-select: none; -webkit-user-select: none; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud"></div>
+  <div id="stage">
+    <canvas id="c" width="640" height="480"></canvas>
+    <div id="prompt"></div>
+    <div id="toast"></div>
+    <div id="modal"><div id="box"></div></div>
+  </div>
+</div>
+<div id="pad">
+  <div class="pb" data-k="up" style="left:70px;bottom:130px">▲</div>
+  <div class="pb" data-k="left" style="left:10px;bottom:70px">◀</div>
+  <div class="pb" data-k="right" style="left:130px;bottom:70px">▶</div>
+  <div class="pb" data-k="down" style="left:70px;bottom:10px">▼</div>
+  <div class="pb" data-k="act" style="right:20px;bottom:50px;width:76px;height:76px;font-size:20px">E</div>
+</div>
+
+<script>
+(() => {
+'use strict';
+// Fictional teaching game. Not medical advice.
+
+const T = 32, W = 20, H = 15;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+
+// ---------- world layout ----------
+const buildings = [
+  { x: 1,  y: 1, w: 6, h: 3, body: '#e8e1d0', roof: '#b04a3a', label: 'CLINIC' },
+  { x: 8,  y: 1, w: 3, h: 3, body: '#cdbf9a', roof: '#7a6a45', label: 'SUPPLY' },
+  { x: 13, y: 1, w: 6, h: 3, body: '#bcc7d6', roof: '#475b78', label: 'QUARTERS' },
+  { x: 1,  y: 7, w: 5, h: 3, body: '#e3c9a0', roof: '#8c5a2b', label: 'DFAC' },
+  { x: 7,  y: 7, w: 4, h: 3, body: '#c9d6c0', roof: '#4d6b44', label: 'GYM' },
+  { x: 12, y: 7, w: 4, h: 3, body: '#d8c9e3', roof: '#6b4d84', label: 'LIBRARY' },
+  { x: 17, y: 7, w: 3, h: 3, body: '#b9bcc2', roof: '#555a63', label: 'HANGAR' },
+];
+const stations = [
+  { id: 'sick',    name: 'Sick Call',          emoji: '🩺', x: 3,  y: 4 },
+  { id: 'supply',  name: 'Supply',             emoji: '📦', x: 9,  y: 4 },
+  { id: 'bed',     name: 'Bed',                emoji: '🛏️', x: 15, y: 4 },
+  { id: 'dfac',    name: 'Dining Facility',    emoji: '🍽️', x: 3,  y: 10 },
+  { id: 'gym',     name: 'Gym',                emoji: '🏋️', x: 8,  y: 10 },
+  { id: 'library', name: 'Study (Library)',    emoji: '📚', x: 13, y: 10 },
+  { id: 'flight',  name: 'Flight Physicals',   emoji: '✈️', x: 18, y: 10 },
+];
+const planes = [ { x: 3, y: 13 }, { x: 9, y: 13 }, { x: 15, y: 13 } ];
+const solids = [];
+buildings.forEach(b => solids.push({ x: b.x * T, y: b.y * T, w: b.w * T, h: b.h * T }));
+stations.forEach(s => solids.push({ x: s.x * T, y: s.y * T, w: T, h: T }));
+planes.forEach(p => solids.push({ x: p.x * T, y: p.y * T + 6, w: T * 2, h: T - 10 }));
+
+// ---------- state ----------
+const RANKS = [[0, '2nd Lt'], [10, '1st Lt'], [25, 'Captain'], [45, 'Major'], [70, 'Lt Col'], [100, 'Colonel']];
+function fresh() {
+  return { day: 1, min: 360, energy: 60, maxE: 60, money: 50, rep: 0, xp: 0, level: 1, supplies: 5,
+           gym: 0, friends: {}, talked: {}, pos: { x: 10 * T, y: 6 * T }, rank: 0,
+           stats: { treated: 0, right: 0, phys: 0, physRight: 0 } };
+}
+let S = fresh();
+try { const j = JSON.parse(localStorage.getItem('fsv_save') || 'null'); if (j && j.day) S = Object.assign(fresh(), j); } catch (e) {}
+const save = () => { try { localStorage.setItem('fsv_save', JSON.stringify(S)); } catch (e) {} };
+
+// ---------- NPCs ----------
+const npcs = [
+  { id: 'rivera', name: 'Capt Rivera (Pilot)', emoji: '🧑‍✈️', x: 11 * T, y: 11.4 * T, bounds: [4, 11, 16, 12],
+    lines: ['Doc, my ears pop on every descent. Funny how that only happens when I fly.', 'Best view in the Air Force, and you want to see my vitals?', 'Keep me flying and I\'ll give you a ride someday. Paperwork permitting.'] },
+  { id: 'okafor', name: 'SSgt Okafor (Med Tech)', emoji: '🧑‍⚕️', x: 7 * T, y: 5.2 * T, bounds: [0, 5, 12, 6],
+    lines: ['Sir/Ma\'am, supply says we\'re low on gauze again. Shocking.', 'I triaged four sore throats before breakfast. Two were just thirsty.', 'You do the thinking, I\'ll do the vitals. Deal?'] },
+  { id: 'bell', name: 'Chaplain Bell', emoji: '🕊️', x: 17 * T, y: 5.5 * T, bounds: [12, 5, 19, 6],
+    lines: ['Take care of yourself too, Doc. The healer needs healing.', 'My door is always open. So is the coffee pot.', 'Sleep is a mission requirement. Look it up.'] },
+  { id: 'park', name: 'Col Park (Commander)', emoji: '🎖️', x: 14 * T, y: 11.4 * T, bounds: [12, 11, 19, 12],
+    lines: ['Keep my aircrew healthy and current, Doc. That\'s the whole job.', 'Inspections are coming. I like what I\'m seeing.', 'Reputation is built one good decision at a time.'] },
+];
+npcs.forEach(n => { n.tx = n.x; n.ty = n.y; n.wait = Math.random() * 2; });
+
+// ---------- cases ----------
+// tier 1-3. options[0] is always the correct one in source; shuffled at runtime.
+const CASES = [
+  { t: 1, who: 'Airman, 22', c: 'Sore throat, fever 101°F, swollen tonsils with white exudate, no cough.', o: ['Rapid strep test, treat if positive', 'Prescribe an antifungal', 'Send back to work, no workup'], why: 'Fever + exudate + no cough points to strep. Test, then treat.' },
+  { t: 1, who: 'Soldier, 25', c: 'Rolled ankle on a PT run. Can bear weight, mild swelling, no bone tenderness.', o: ['Rest, ice, compression, elevation, brace', 'Full cast and crutches', 'Urgent MRI and surgical referral'], why: 'Ottawa rules: weight-bearing and no bony tenderness means a conservative sprain plan.' },
+  { t: 1, who: 'Airman, 20', c: 'Dizzy and headachy after a long day on the hot flight line. Dark urine, temp 100°F, alert and talking.', o: ['Shade, oral fluids, rest, recheck', 'Start IV antibiotics', 'Permanent flight restriction'], why: 'Mild heat exhaustion. Cool down and rehydrate.' },
+  { t: 1, who: 'Staff Sgt, 31', c: 'Itchy eyes, clear runny nose, sneezing every spring. No fever.', o: ['Nasal steroid or non-sedating antihistamine', 'Broad-spectrum antibiotics', 'Chest X-ray'], why: 'Classic seasonal allergic rhinitis. Non-sedating options matter for aircrew.' },
+  { t: 1, who: 'Airman, 24', c: '3 cm forearm laceration from a tool. Clean, bleeding controlled. Last tetanus 12 years ago.', o: ['Irrigate, close the wound, update tetanus', 'Leave it open and ignore', 'Oral antibiotics only, no closure'], why: 'Clean it, close it, and update tetanus if over 10 years.' },
+  { t: 1, who: 'Pilot, 37', c: 'Ear pain and muffled hearing after a rapid descent. No fever, drum looks retracted.', o: ['Decongestant, Valsalva, hold from flying until cleared', 'IV antibiotics and admit', 'Immediate ear surgery'], why: 'Barotrauma (ear block). Treat conservatively and ground until it resolves.' },
+  { t: 2, who: 'Airman, 23', c: 'Hiking last week. Now an expanding circular rash with central clearing on the thigh and a tick bite.', o: ['Start doxycycline for suspected Lyme', 'Cold compress only', 'Antihistamine and observe'], why: 'Erythema migrans is treated empirically with doxycycline.' },
+  { t: 2, who: 'Sergeant, 29', c: 'Three weeks of poor sleep, irritability and jumpiness after returning from deployment.', o: ['Supportive visit, screen, refer to behavioral health', 'Tell them to tough it out', 'Prescribe opioids to help sleep'], why: 'Screen and connect to care early. Stigma kills; opioids don\'t help.' },
+  { t: 2, who: 'Airman, 27', c: 'Cough for 3+ weeks with night sweats and weight loss. Recent travel overseas.', o: ['Mask, isolate, chest X-ray and sputum testing', 'Cough drops and recheck in a month', 'Z-pack and return to work'], why: 'Possible TB. Isolate and work it up before sending anyone back.' },
+  { t: 2, who: 'Soldier, 21', c: 'Collapsed on a ruck march. Confused, skin hot and dry, temp 104°F.', o: ['Rapid cooling and urgent evacuation', 'Sip water in the barracks', 'Rest and recheck tomorrow'], why: 'Heat stroke is an emergency. Cool first, transport fast.' },
+  { t: 3, who: 'Airman, 26', c: 'Severe headache, fever, stiff neck, light hurts his eyes.', o: ['Emergency transfer for suspected meningitis', 'Ibuprofen and a dark room', 'Cough syrup and rest'], why: 'Meningitis signs mean immediate escalation and antibiotics.' },
+  { t: 3, who: 'NCO, 45', c: 'Crushing chest pressure radiating to the left arm, sweating, nauseated.', o: ['ECG, aspirin, activate emergency transport', 'Antacid and release', 'Refer to physical therapy'], why: 'Possible heart attack. Time is muscle.' },
+  { t: 3, who: 'Aircrew, 38', c: 'Sudden shortness of breath and sharp chest pain after a long flight. One calf is swollen.', o: ['Urgent evaluation for pulmonary embolism', 'Cough suppressant and rest', 'Chest wall stretches'], why: 'Long travel plus a swollen calf plus dyspnea equals PE until proven otherwise.' },
+];
+const PHYS = [
+  { who: 'Pilot, 34', c: 'BP 118/76, vision 20/20, no medications. Everything normal.', a: 0, why: 'Normal exam. Cleared to fly.' },
+  { who: 'Pilot, 41', c: 'BP 162/98 on three readings, frequent headaches.', a: 1, why: 'Uncontrolled hypertension. DNIF (Duties Not Including Flying) until worked up.' },
+  { who: 'Aircrew, 29', c: 'Started a new antidepressant last week.', a: 1, why: 'New psychotropic medication means grounded while response and side effects are assessed.' },
+  { who: 'Loadmaster, 33', c: 'Takes daily loratadine for seasonal allergies, well controlled.', a: 0, why: 'A non-sedating antihistamine is fine for aircrew.' },
+  { who: 'Pilot, 36', c: 'Took diphenhydramine to sleep last night, a sedating antihistamine.', a: 1, why: 'Sedating antihistamines require a flying hold of at least 24 to 48 hours.' },
+  { who: 'Pilot, 44', c: 'Hypothyroidism, stable on levothyroxine with normal labs for a year.', a: 2, why: 'Stable chronic condition: submit a waiver request with documentation.' },
+  { who: 'Crew Chief, 28', c: 'Fever resolved 12 hours ago after a flu-like illness. Still weak and coughing.', a: 1, why: 'Not recovered. DNIF until symptom-free and back to baseline.' },
+  { who: 'Pilot, 32', c: 'LASIK 6 months ago, stable 20/20 vision, no night-glare issues.', a: 0, why: 'Stable post-LASIK vision with no complications is cleared.' },
+  { who: 'Aircrew, 39', c: 'Single episode of kidney stone passed last month, now asymptomatic, imaging clear.', a: 2, why: 'History of a stone typically needs a waiver with a documented workup.' },
+];
+
+// ---------- helpers ----------
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rnd = a => a[Math.floor(Math.random() * a.length)];
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const clock = m => { const h = Math.floor(m / 60) % 24, mm = Math.floor(m % 60); const ap = h >= 12 ? 'PM' : 'AM'; return ((h + 11) % 12 + 1) + ':' + String(mm).padStart(2, '0') + ' ' + ap; };
+const rankName = () => RANKS[S.rank][1];
+const need = () => S.level * 6;
+const hearts = id => Math.floor(S.friends[id] || 0);
+
+let toastTimer = 0;
+function toast(msg, ms = 3200) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = 'none', ms); }
+
+// ---------- modal ----------
+let modalOpen = false, modalKeys = [];
+function modal(title, body, choices) {
+  modalOpen = true; modalKeys = [];
+  const box = $('box'); box.innerHTML = '';
+  const h = document.createElement('h2'); h.textContent = title; box.appendChild(h);
+  const p = document.createElement('div'); p.innerHTML = body; box.appendChild(p);
+  choices.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.textContent = (choices.length > 1 ? (i + 1) + '. ' : '') + c.label;
+    if (c.disabled) b.className = 'dis';
+    const go = () => { if (c.disabled) return; closeModal(); if (c.fn) c.fn(); };
+    b.onclick = go; modalKeys.push(go);
+    box.appendChild(b);
+  });
+  $('modal').style.display = 'flex';
+  const first = box.querySelector('button'); if (first) first.focus();
+}
+function closeModal() { modalOpen = false; $('modal').style.display = 'none'; }
+function info(title, body, then) { modal(title, body, [{ label: 'OK', fn: then }]); }
+
+// ---------- game logic ----------
+function spend(energy, mins) {
+  if (S.energy < energy) { toast('Too tired. Eat at the DFAC or get some sleep.'); return false; }
+  S.energy -= energy; S.min += mins; checkPassOut(); return true;
+}
+function gainXp(x) {
+  S.xp += x;
+  while (S.xp >= need() && S.level < 6) { S.xp -= need(); S.level++; toast('Skill up! Medical skill is now level ' + S.level + '. Harder cases ahead.', 5000); }
+}
+function addRep(n) {
+  S.rep = Math.max(0, S.rep + n);
+  let r = 0; RANKS.forEach((x, i) => { if (S.rep >= x[0]) r = i; });
+  if (r > S.rank) { S.rank = r; info('Promotion!', '<p>You have been promoted to <b>' + RANKS[r][1] + '</b>.</p>' + (r === 5 ? '<p>You made Colonel and became the Wing Flight Surgeon. You won. Keep playing as long as you like.</p>' : '')); }
+}
+const payMult = () => 1 + Math.min(S.rep, 120) / 100;
+
+function sickCall() {
+  if (S.supplies < 1) return toast('No supplies. Restock at Supply first.');
+  if (S.energy < 8) return toast('Too tired to see patients.');
+  const tier = Math.min(3, Math.ceil(S.level / 2));
+  const pool = CASES.filter(c => c.t <= tier);
+  const cs = rnd(pool);
+  const opts = shuffle(cs.o.map((t, i) => ({ t, ok: i === 0 })));
+  modal('Sick Call: ' + cs.who, '<p>' + esc(cs.c) + '</p><p class="tag">What is your plan?</p>',
+    opts.map(o => ({ label: o.t, fn: () => resolveCase(cs, o.ok) })));
+}
+function resolveCase(cs, ok) {
+  if (!spend(8, 30)) return;
+  S.supplies--; S.stats.treated++;
+  let msg;
+  if (ok) {
+    const pay = Math.round((12 + 6 * Math.min(3, Math.ceil(S.level / 2)) * 1) * payMult());
+    S.money += pay; S.stats.right++; gainXp(2); addRep(1);
+    msg = '<p><b>Good call.</b> +$' + pay + ', +1 reputation, +2 XP.</p>';
+  } else {
+    gainXp(0.5); addRep(-1);
+    msg = '<p><b>Not ideal.</b> The patient is sent for a second opinion. -1 reputation.</p>';
+  }
+  info(ok ? 'Treated' : 'Missed It', msg + '<p>' + esc(cs.why) + '</p>');
+}
+
+function flightPhysical() {
+  if (S.energy < 10) return toast('Too tired for a flight physical.');
+  const p = rnd(PHYS);
+  const labels = ['Cleared to fly', 'DNIF (ground them)', 'Request a waiver'];
+  modal('Flight Physical: ' + p.who, '<p>' + esc(p.c) + '</p><p class="tag">Your fitness-for-duty decision?</p>',
+    labels.map((l, i) => ({ label: l, fn: () => resolvePhys(p, i === p.a) })));
+}
+function resolvePhys(p, ok) {
+  if (!spend(10, 45)) return;
+  S.stats.phys++;
+  let msg;
+  if (ok) {
+    const pay = Math.round(25 * payMult());
+    S.money += pay; S.stats.physRight++; gainXp(3); addRep(2);
+    msg = '<p><b>Right decision.</b> +$' + pay + ', +2 reputation, +3 XP.</p>';
+  } else {
+    addRep(-2); gainXp(0.5);
+    msg = '<p><b>Wrong call.</b> The flight surgeon board is not amused. -2 reputation.</p>';
+  }
+  info(ok ? 'Physical Complete' : 'Review Board', msg + '<p>' + esc(p.why) + '</p>');
+}
+
+function supply() {
+  const cost = Math.max(10, 25 - hearts('okafor') * 2);
+  modal('Supply Room', '<p>Supplies on hand: <b>' + S.supplies + '</b>. Each patient uses one.</p>', [
+    { label: 'Buy 5 supplies ($' + cost + ')', disabled: S.money < cost, fn: () => { if (S.money >= cost) { S.money -= cost; S.supplies += 5; toast('Bought 5 supplies.'); } } },
+    { label: 'Leave', fn: null },
+  ]);
+}
+function dfac() {
+  modal('Dining Facility', '<p>Hot meal. Brain and body both run on this.</p>', [
+    { label: 'Full meal ($6): +35 energy, 30 min', disabled: S.money < 6, fn: () => { if (S.money < 6) return; S.money -= 6; S.energy = Math.min(S.maxE, S.energy + 35); S.min += 30; checkPassOut(); toast('Ate a hot meal.'); } },
+    { label: 'Leave', fn: null },
+  ]);
+}
+function gym() {
+  if (S.energy < 14) return toast('Too tired to train.');
+  modal('Gym', '<p>PT sessions done: ' + S.gym + '. Every 3 sessions raises max energy by 5.</p>', [
+    { label: 'Work out (-14 energy, 60 min)', fn: () => { if (!spend(14, 60)) return; S.gym++; if (S.gym % 3 === 0) { S.maxE += 5; toast('Max energy up to ' + S.maxE + '!'); } else toast('Good workout.'); } },
+    { label: 'Leave', fn: null },
+  ]);
+}
+function library() {
+  modal('Library', '<p>Review clinical guidelines and aeromedical standards.</p>', [
+    { label: 'Study (-10 energy, 60 min): +3 XP', fn: () => { if (!spend(10, 60)) return; gainXp(3); toast('You learned something useful.'); } },
+    { label: 'Leave', fn: null },
+  ]);
+}
+function bed() {
+  const early = S.min < 1080;
+  modal('Quarters', '<p>' + (early ? 'It is early. You will lose the rest of the day.' : 'Time for lights out?') + '</p>', [
+    { label: 'Go to sleep', fn: () => newDay(S.min < 1440) },
+    { label: 'Not yet', fn: null },
+  ]);
+}
+function checkPassOut() { if (S.min >= 1560 && !modalOpen) newDay(false); else if (S.min >= 1560) setTimeout(checkPassOut, 300); }
+
+function newDay(rested) {
+  S.day++; S.min = 360;
+  S.energy = rested ? S.maxE : Math.round(S.maxE * 0.6);
+  S.talked = {};
+  let extra = '';
+  if (!rested) { S.money = Math.max(0, S.money - 10); extra += '<p>You passed out at your desk. Missed PT and paid $10 in lost time. Get to bed earlier.</p>'; }
+  // friend perks
+  const perks = [];
+  npcs.forEach(n => { if (hearts(n.id) >= 3) { if (Math.random() < .5) { S.money += 10; perks.push(n.name.split(' (')[0] + ' left you $10'); } else { S.supplies++; perks.push(n.name.split(' (')[0] + ' dropped off a supply kit'); } } });
+  if (perks.length) extra += '<p>' + esc(perks.join('. ')) + '.</p>';
+  // weekly inspection
+  if (S.day % 7 === 0) {
+    const score = S.rep * 2 + S.stats.right + S.stats.physRight;
+    const bonus = Math.min(150, 20 + score);
+    S.money += bonus; addRep(2);
+    extra += '<p><b>Commander\'s inspection!</b> Passed. Bonus $' + bonus + ', +2 reputation.</p>';
+  }
+  save();
+  info('Day ' + S.day, '<p>' + (rested ? 'You slept well.' : 'You woke up groggy.') + '</p>' + extra);
+}
+
+function talk(n) {
+  const h = hearts(n.id);
+  const first = !S.talked[n.id];
+  const choices = [
+    { label: 'Chat', fn: () => {
+        if (first) { S.friends[n.id] = Math.min(5, (S.friends[n.id] || 0) + 0.35); S.talked[n.id] = true; }
+        info(n.name, '<p>"' + esc(rnd(n.lines)) + '"</p>' + (first ? '<p class="tag">Friendship grows.</p>' : '<p class="tag">Already talked today.</p>'));
+      } },
+    { label: 'Buy coffee for them ($5)', disabled: S.money < 5, fn: () => {
+        if (S.money < 5) return; S.money -= 5; S.friends[n.id] = Math.min(5, (S.friends[n.id] || 0) + 0.25);
+        toast('They loved the coffee. Friendship +');
+      } },
+    { label: 'Leave', fn: null },
+  ];
+  modal(n.name, '<p>Friendship: ' + '❤️'.repeat(h) + '🤍'.repeat(5 - h) + (h >= 3 ? ' (daily perk unlocked)' : ' (3 hearts unlocks a daily perk)') + '</p>', choices);
+}
+
+const actions = { sick: sickCall, supply, bed, dfac, gym, library, flight: flightPhysical };
+
+// ---------- input ----------
+const keys = {};
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (modalOpen) {
+    if (/^[1-9]$/.test(k) && modalKeys[+k - 1]) { e.preventDefault(); modalKeys[+k - 1](); }
+    if (k === 'escape') closeModal();
+    return;
+  }
+  keys[k] = true;
+  if (k === 'e' || k === ' ' || k === 'enter') { e.preventDefault(); interact(); }
+  if (k.startsWith('arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+document.querySelectorAll('.pb').forEach(b => {
+  const k = b.dataset.k;
+  const on = e => { e.preventDefault(); if (k === 'act') { if (!modalOpen) interact(); } else keys['pad' + k] = true; };
+  const off = e => { e.preventDefault(); keys['pad' + k] = false; };
+  b.addEventListener('touchstart', on, { passive: false }); b.addEventListener('touchend', off, { passive: false }); b.addEventListener('touchcancel', off);
+  b.addEventListener('mousedown', on); b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off);
+});
+
+// ---------- movement ----------
+const P = { w: 18, h: 14 };
+function hits(x, y) {
+  if (x < 0 || y < 0 || x + P.w > W * T || y + P.h > H * T) return true;
+  for (const s of solids) if (x < s.x + s.w && x + P.w > s.x && y < s.y + s.h && y + P.h > s.y) return true;
+  return false;
+}
+function move(dt) {
+  let dx = 0, dy = 0;
+  if (keys.a || keys.arrowleft || keys.padleft) dx -= 1;
+  if (keys.d || keys.arrowright || keys.padright) dx += 1;
+  if (keys.w || keys.arrowup || keys.padup) dy -= 1;
+  if (keys.s || keys.arrowdown || keys.paddown) dy += 1;
+  if (dx && dy) { dx *= .7071; dy *= .7071; }
+  const sp = 120 * dt;
+  const nx = S.pos.x + dx * sp, ny = S.pos.y + dy * sp;
+  if (!hits(nx, S.pos.y)) S.pos.x = nx;
+  if (!hits(S.pos.x, ny)) S.pos.y = ny;
+  P.moving = dx || dy;
+}
+function npcBlocked(x, y, self) {
+  if (x < 0 || y < 0 || x + 20 > W * T || y + 14 > H * T) return true;
+  for (const s of solids) if (x < s.x + s.w && x + 20 > s.x && y < s.y + s.h && y + 14 > s.y) return true;
+  return false;
+}
+function updateNpcs(dt) {
+  npcs.forEach(n => {
+    n.wait -= dt;
+    if (n.wait <= 0 && Math.abs(n.tx - n.x) < 2 && Math.abs(n.ty - n.y) < 2) {
+      const b = n.bounds;
+      n.tx = (b[0] + Math.random() * (b[2] - b[0])) * T; n.ty = (b[1] + Math.random() * (b[3] - b[1])) * T;
+      n.wait = 2 + Math.random() * 4;
+    }
+    const dx = n.tx - n.x, dy = n.ty - n.y, d = Math.hypot(dx, dy);
+    if (d > 2) {
+      const sp = 38 * dt, nx = n.x + dx / d * sp, ny = n.y + dy / d * sp;
+      if (!npcBlocked(nx, ny, n)) { n.x = nx; n.y = ny; } else { n.tx = n.x; n.ty = n.y; }
+    }
+  });
+}
+
+// ---------- interaction ----------
+let near = null;
+function findNear() {
+  const px = S.pos.x + P.w / 2, py = S.pos.y + P.h / 2;
+  let best = null, bd = 46;
+  stations.forEach(s => { const d = Math.hypot(px - (s.x + .5) * T, py - (s.y + .5) * T); if (d < bd) { bd = d; best = { kind: 's', o: s }; } });
+  npcs.forEach(n => { const d = Math.hypot(px - (n.x + 10), py - (n.y + 7)); if (d < bd) { bd = d; best = { kind: 'n', o: n }; } });
+  return best;
+}
+function interact() { if (near) { if (near.kind === 's') actions[near.o.id](); else talk(near.o); } }
+
+// ---------- rendering ----------
+function draw() {
+  // ground
+  ctx.fillStyle = '#6aa84f'; ctx.fillRect(0, 0, W * T, H * T);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ((x * 7 + y * 13) % 5 === 0) { ctx.fillStyle = '#62a047'; ctx.fillRect(x * T + 8, y * T + 10, 6, 3); }
+  // paths
+  ctx.fillStyle = '#d9c9a0'; ctx.fillRect(0, 5 * T, W * T, 2 * T); ctx.fillRect(0, 11 * T, W * T, T);
+  ctx.fillStyle = '#cdbb8c'; for (let x = 0; x < W * 2; x++) ctx.fillRect(x * 16 + 4, 5 * T + 28, 6, 2);
+  // tarmac
+  ctx.fillStyle = '#5a5f66'; ctx.fillRect(0, 12 * T, W * T, 3 * T);
+  ctx.fillStyle = '#e5c84a'; for (let x = 0; x < W * 2; x++) ctx.fillRect(x * 16 + 3, 14 * T + 14, 10, 3);
+  // buildings
+  buildings.forEach(b => {
+    const x = b.x * T, y = b.y * T, w = b.w * T, h = b.h * T;
+    ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.fillRect(x + 4, y + 4, w, h);
+    ctx.fillStyle = b.body; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = b.roof; ctx.fillRect(x, y, w, 20);
+    ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(b.label, x + w / 2, y + 14);
+    ctx.fillStyle = '#8fb8d9';
+    for (let wx = x + 12; wx < x + w - 20; wx += 34) ctx.fillRect(wx, y + 34, 16, 14);
+  });
+  // planes
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.font = '40px sans-serif';
+  planes.forEach(p => ctx.fillText('✈️', p.x * T + T, p.y * T + T / 2));
+  // stations
+  ctx.font = '26px sans-serif';
+  stations.forEach(s => {
+    ctx.fillStyle = 'rgba(255,248,225,.85)'; ctx.fillRect(s.x * T + 1, s.y * T + 1, T - 2, T - 2);
+    ctx.fillText(s.emoji, (s.x + .5) * T, (s.y + .5) * T + 2);
+  });
+  // entities sorted by y
+  const ents = npcs.map(n => ({ y: n.y, e: n.emoji, x: n.x + 10, sz: 26, name: n.name.split(' (')[0] }));
+  ents.push({ y: S.pos.y, e: '🧑‍⚕️', x: S.pos.x + P.w / 2, sz: 28, me: true });
+  ents.sort((a, b) => a.y - b.y);
+  ents.forEach(en => {
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(en.x, en.y + 15, 10, 4, 0, 0, 7); ctx.fill();
+    ctx.font = en.sz + 'px sans-serif'; ctx.fillText(en.e, en.x, en.y + 2);
+    if (en.me) { ctx.font = 'bold 10px sans-serif'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; ctx.strokeText('You', en.x, en.y - 18); ctx.fillText('You', en.x, en.y - 18); }
+  });
+  // highlight
+  if (near && !modalOpen) {
+    ctx.strokeStyle = '#ffd966'; ctx.lineWidth = 2;
+    if (near.kind === 's') ctx.strokeRect(near.o.x * T + 1, near.o.y * T + 1, T - 2, T - 2);
+    else ctx.strokeRect(near.o.x - 2, near.o.y - 14, 24, 32);
+  }
+  // day/night
+  const t = S.min / 60; let a = 0;
+  if (t >= 18 && t < 22) a = (t - 18) / 4 * .5; else if (t >= 22) a = .5;
+  if (t < 7) a = (7 - t) * .25;
+  if (a > 0) { ctx.fillStyle = 'rgba(10,15,50,' + a + ')'; ctx.fillRect(0, 0, W * T, H * T); }
+}
+
+function hud() {
+  const pct = Math.round(S.energy / S.maxE * 100);
+  const next = RANKS[S.rank + 1];
+  $('hud').innerHTML =
+    '<span>Day <b>' + S.day + '</b> ' + clock(S.min) + '</span>' +
+    '<span>⚡ <span id="bar"><i style="width:' + pct + '%"></i></span> ' + Math.round(S.energy) + '/' + S.maxE + '</span>' +
+    '<span>💵 <b>$' + S.money + '</b></span>' +
+    '<span>📦 <b>' + S.supplies + '</b></span>' +
+    '<span>🎖️ <b>' + rankName() + '</b> (rep ' + S.rep + (next ? '/' + next[0] : '') + ')</span>' +
+    '<span>🩺 Lv <b>' + S.level + '</b> (' + Math.floor(S.xp) + '/' + need() + ')</span>';
+}
+
+// ---------- main loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (!modalOpen) {
+    move(dt); updateNpcs(dt);
+    S.min += dt * 3.3;
+    if (S.min >= 1560) newDay(false);
+  }
+  near = findNear();
+  const pr = $('prompt');
+  if (near && !modalOpen) { pr.style.display = 'block'; pr.textContent = '[E] ' + near.o.name; } else pr.style.display = 'none';
+  draw(); hud();
+  requestAnimationFrame(frame);
+}
+
+// expose a tiny hook for automated testing
+window.__fsv = { S, actions, npcs, newDay, sickCall, flightPhysical };
+
+if (S.day === 1 && S.stats.treated === 0 && S.min === 360) {
+  modal('Flight Surgeon Valley', '<p>Welcome, Doc. You\'re the new flight surgeon on base. Keep the aircrew healthy, make the right calls, and climb the ranks to Colonel.</p>' +
+    '<p><b>Move:</b> WASD or arrows. <b>Interact:</b> E, Space, or the E button.</p>' +
+    '<p>See patients at the <b>Sick Call</b>, check aircrew at the <b>Flight Line</b>, restock at <b>Supply</b>, and don\'t forget to eat, train, study and sleep. Befriend your teammates for daily perks.</p>' +
+    '<p class="tag">Fictional game for fun and learning. Not medical advice.</p>',
+    [{ label: 'Start the day', fn: null }]);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
